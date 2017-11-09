@@ -51,6 +51,7 @@ int catmouse(int, char **);
 /* lib tests */
 int arraytest(int, char **);
 int bitmaptest(int, char **);
+int lab4test(int, char **);
 int queuetest(int, char **);
 
 /* thread tests */

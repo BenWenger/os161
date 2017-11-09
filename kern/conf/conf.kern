@@ -434,6 +434,7 @@ optfile   synchprobs  synchprobs/catmouse_synch.c
 
 file		test/arraytest.c
 file		test/bitmaptest.c
+file		test/lab4test.c
 file		test/threadtest.c
 file		test/tt3.c
 file		test/synchtest.c
