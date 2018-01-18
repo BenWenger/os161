@@ -105,8 +105,7 @@ threadfuntest(int nargs, char **args)
         kprintf("Unable to start thread fun test, missing argument\n");
         return 1;
     }
-    int numthreads = 0;
-    sscanf(args[1], "%d", &numthreads);
+    int numthreads = atoi(args[1]);
     if(numthreads <= 0) {
         kprintf("Unable to start thread fun test, need at least 1 thread\n");
         return 1;
