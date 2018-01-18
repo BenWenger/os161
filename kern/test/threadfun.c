@@ -36,8 +36,6 @@
 #include <synch.h>
 #include <test.h>
 
-#define NTHREADS  10
-
 static struct semaphore *tsem = NULL;
 
 static
@@ -77,12 +75,12 @@ testthread(void *junk, unsigned long num)
 
 static
 void
-runthreads()
+runthreads(int numthreads)
 {
 	char name[16];
 	int i, result;
 
-	for (i=0; i<NTHREADS; i++) {
+	for (i=0; i<numthreads; i++) {
 		snprintf(name, sizeof(name), "threadfuntest%d", i);
 		result = thread_fork(name, NULL,
 				     testthread,
@@ -93,7 +91,7 @@ runthreads()
 		}
 	}
 
-	for (i=0; i<NTHREADS; i++) {
+	for (i=0; i<numthreads; i++) {
 		P(tsem);
 	}
 }
@@ -102,12 +100,21 @@ runthreads()
 int
 threadfuntest(int nargs, char **args)
 {
-	(void)nargs;
-	(void)args;
+    if(nargs < 2) {
+        kprintf("Usage:  tfun <number_of_threads>\n");
+        kprintf("Unable to start thread fun test, missing argument\n");
+        return 1;
+    }
+    int numthreads = 0;
+    sscanf(args[1], "%d", &numthreads);
+    if(numthreads <= 0) {
+        kprintf("Unable to start thread fun test, need at least 1 thread\n");
+        return 1;
+    }
 
 	init_sem();
-	kprintf("Starting thread fun test %d-%s...\n", nargs, args[0]);
-	runthreads();
+	kprintf("Starting thread fun test with %d threads...\n", numthreads);
+	runthreads(numthreads);
 	kprintf("\nThread test done.\n");
 
 	return 0;
