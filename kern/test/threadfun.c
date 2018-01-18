@@ -106,7 +106,7 @@ threadfuntest(int nargs, char **args)
 	(void)args;
 
 	init_sem();
-	kprintf("Starting thread fun test...\n");
+	kprintf("Starting thread fun test %d-%s...\n", nargs, args[0]);
 	runthreads();
 	kprintf("\nThread test done.\n");
 
