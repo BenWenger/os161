@@ -460,6 +460,7 @@ static const char *testmenu[] = {
 	"[tt1] Thread test 1                 ",
 	"[tt2] Thread test 2                 ",
 	"[tt3] Thread test 3                 ",
+	"[tfun] Thread fun test (Lab 5)      ",
 #if OPT_NET
 	"[net] Network test                  ",
 #endif
