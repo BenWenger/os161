@@ -27,70 +27,88 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _TEST_H_
-#define _TEST_H_
+/*
+ * Thread test code.
+ */
+#include <types.h>
+#include <lib.h>
+#include <thread.h>
+#include <synch.h>
+#include <test.h>
+
+#define NTHREADS  10
+
+static struct semaphore *tsem = NULL;
+
+static
+void
+init_sem(void)
+{
+	if (tsem==NULL) {
+		tsem = sem_create("tsem", 0);
+		if (tsem == NULL) {
+			panic("threadfuntest: sem_create failed\n");
+		}
+	}
+}
 
 /*
- * Declarations for test code and other miscellaneous high-level
- * functions.
+ * The idea with this is that you should see
+ *
+ *   01234567 <pause> 01234567
+ *
+ * (possibly with the numbers in different orders)
+ *
+ * The delay loop is supposed to be long enough that it should be clear
+ * if either timeslicing or the scheduler is not working right.
  */
+static
+void
+testthread(void *junk, unsigned long num)
+{
+	int ch = '0' + num;
 
-void hello(void);
+	(void)junk;
 
-/* This is only actually available if OPT_SYNCHPROBS is set. */
-int whalemating(int, char **);
+	putch(ch);
 
-#ifdef UW
-int catmouse(int, char **);
-#endif
+	V(tsem);
+}
 
-/*
- * Test code.
- */
+static
+void
+runthreads()
+{
+	char name[16];
+	int i, result;
 
-/* lib tests */
-int arraytest(int, char **);
-int bitmaptest(int, char **);
-int lab4test(int, char **);
-int queuetest(int, char **);
+	for (i=0; i<NTHREADS; i++) {
+		snprintf(name, sizeof(name), "threadfuntest%d", i);
+		result = thread_fork(name, NULL,
+				     testthread,
+				     NULL, i);
+		if (result) {
+			panic("threadfuntest: thread_fork failed %s)\n", 
+			      strerror(result));
+		}
+	}
 
-/* thread tests */
-int threadtest(int, char **);
-int threadtest2(int, char **);
-int threadtest3(int, char **);
-int threadfuntest(int, char **);
-int semtest(int, char **);
-int locktest(int, char **);
-int cvtest(int, char **);
-
-#ifdef UW
-/* Another thread and synchronization test */
-int uwlocktest1(int, char **);
-/* Used to test uw-vmstats */
-int uwvmstatstest(int, char **);
-#endif
-
-/* filesystem tests */
-int fstest(int, char **);
-int readstress(int, char **);
-int writestress(int, char **);
-int writestress2(int, char **);
-int createstress(int, char **);
-int printfile(int, char **);
-
-/* other tests */
-int malloctest(int, char **);
-int mallocstress(int, char **);
-int nettest(int, char **);
-
-/* Routine for running a user-level program. */
-int runprogram(char *progname);
-
-/* Kernel menu system. */
-void menu(char *argstr);
-
-/* The main function, called from start.S. */
-void kmain(char *bootstring);
+	for (i=0; i<NTHREADS; i++) {
+		P(tsem);
+	}
+}
 
 
-#endif /* _TEST_H_ */
+int
+threadfuntest(int nargs, char **args)
+{
+	(void)nargs;
+	(void)args;
+
+	init_sem();
+	kprintf("Starting thread fun test...\n");
+	runthreads();
+	kprintf("\nThread test done.\n");
+
+	return 0;
+}
