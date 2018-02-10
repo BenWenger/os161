@@ -256,42 +256,67 @@ cv_create(const char *name)
                 return NULL;
         }
         
-        // add stuff here as needed
-        
+        cv->wait_channel = wchan_create(cv->cv_name);
+        if(cv->wait_channel == NULL) {
+            kfree(cv);
+            return NULL;
+        }
+        spinlock_init(&cv->spin_lock);
         return cv;
 }
 
 void
 cv_destroy(struct cv *cv)
 {
-        KASSERT(cv != NULL);
+    KASSERT(cv != NULL);
 
-        // add stuff here as needed
+	spinlock_cleanup(&cv->spin_lock);
+	wchan_destroy(cv->wait_channel);
         
-        kfree(cv->cv_name);
-        kfree(cv);
+    kfree(cv->cv_name);
+    kfree(cv);
 }
 
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
-        // Write this
-        (void)cv;    // suppress warning until code gets written
-        (void)lock;  // suppress warning until code gets written
+    KASSERT( cv != NULL );
+    KASSERT( lock != NULL );
+    KASSERT( lock_do_i_hold(lock) );
+    
+    spinlock_acquire(&cv->spin_lock);
+    wchan_lock(cv->wait_channel);
+    spinlock_release(&cv->spin_lock);
+    
+    lock_release(lock);
+    wchan_sleep(cv->wait_channel);
+    lock_acquire(lock);
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-        // Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+    // actually, I don't think I need the lock passed in for this implementation,
+    //   but whatever...
+    // the docs say the thread must have this lock acquired, so verify that!
+    
+    KASSERT( cv != NULL );
+    KASSERT( lock != NULL );
+    KASSERT( lock_do_i_hold(lock) );
+    
+    spinlock_acquire(&cv->spin_lock);
+    wchan_wakeone(cv->wait_channel);
+    spinlock_release(&cv->spin_lock);
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+    KASSERT( cv != NULL );
+    KASSERT( lock != NULL );
+    KASSERT( lock_do_i_hold(lock) );
+    
+    spinlock_acquire(&cv->spin_lock);
+    wchan_wakeall(cv->wait_channel);
+    spinlock_release(&cv->spin_lock);
 }
