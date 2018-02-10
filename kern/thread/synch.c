@@ -178,7 +178,7 @@ void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
-        KASSERT(owned_thread == NULL);  // nobody should have this locked
+        KASSERT(lock->owned_thread == NULL);  // nobody should have this locked
         
 	spinlock_cleanup(&lock->spin_lock);
 	wchan_destroy(lock->wait_channel);
