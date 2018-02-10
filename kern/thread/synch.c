@@ -163,8 +163,14 @@ lock_create(const char *name)
                 return NULL;
         }
         
-        // add stuff here as needed
         
+        lock->owned_thread = NULL;
+        lock->wait_channel = wchan_create(lock->lk_name);
+        if(lock->wait_channel == NULL) {
+            kfree(lock);
+            return NULL;
+        }
+        spinlock_init(&lock->spin_lock);
         return lock;
 }
 
@@ -172,8 +178,10 @@ void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
-
-        // add stuff here as needed
+        KASSERT(owned_thread == NULL);  // nobody should have this locked
+        
+	spinlock_cleanup(&lock->spin_lock);
+	wchan_destroy(lock->wait_chan);
         
         kfree(lock->lk_name);
         kfree(lock);
@@ -198,11 +206,14 @@ lock_release(struct lock *lock)
 bool
 lock_do_i_hold(struct lock *lock)
 {
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
-
-        return true; // dummy until code gets written
+    bool result;
+    
+    KASSERT(lock != NULL);
+	spinlock_acquire(&lock->spin_lock);
+    result = (lock->owned_thread == curthread);
+    spinlock_release(&lock->spin_lock);
+    
+    return result;
 }
 
 ////////////////////////////////////////////////////////////
