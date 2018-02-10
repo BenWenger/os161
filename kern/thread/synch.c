@@ -177,30 +177,49 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
-        KASSERT(lock != NULL);
-        KASSERT(lock->owned_thread == NULL);  // nobody should have this locked
+    KASSERT(lock != NULL);
+    KASSERT(lock->owned_thread == NULL);  // nobody should have this locked (should this be behind a lock?)
         
 	spinlock_cleanup(&lock->spin_lock);
 	wchan_destroy(lock->wait_channel);
         
-        kfree(lock->lk_name);
-        kfree(lock);
+    kfree(lock->lk_name);
+    kfree(lock);
 }
 
 void
 lock_acquire(struct lock *lock)
 {
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
+    KASSERT(lock != NULL);
+    
+    spinlock_acquire(&lock->spin_lock);
+    KASSERT(lock->owned_thread != curthread);   // can't re-lock a lock you already own!
+    
+    while(lock->owned_thread != NULL)
+    {
+        wchan_lock(lock->wait_channel);
+        spinlock_release(&lock->spin_lock);
+        wchan_sleep(lock->wait_channel);
+        spinlock_acquire(&lock->spin_lock);
+    }
+    
+    // we reach here once nobody else owns the lock
+    lock->owned_thread = curthread;
+    spinlock_release(lock->spin_lock);
 }
 
 void
 lock_release(struct lock *lock)
 {
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
+    KASSERT(lock != NULL);
+    
+    spinlock_acquire(&lock->spin_lock);
+    KASSERT(lock->owned_thread == curthread);   // can only release locks you own! (should this be behind a lock?)
+    
+    lock->owned_thread = NULL;
+    wchan_wakeone(lock->wait_channel);
+    
+    spinlock_release(&lock->spin_lock);
 }
 
 bool
