@@ -68,6 +68,10 @@ cleanitems(void)
 	lock_destroy(testlock);
 	cv_destroy(testcv);
 	sem_destroy(donesem);
+    testsem = NULL;
+    testlock = NULL;
+    testcv = NULL;
+    donesem = NULL;
 	}
 #endif
 
