@@ -205,7 +205,7 @@ lock_acquire(struct lock *lock)
     
     // we reach here once nobody else owns the lock
     lock->owned_thread = curthread;
-    spinlock_release(lock->spin_lock);
+    spinlock_release(&lock->spin_lock);
 }
 
 void
