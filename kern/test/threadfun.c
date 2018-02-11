@@ -38,6 +38,12 @@
 
 static struct semaphore *tsem = NULL;
 
+struct TestInfo
+{
+    int numthreads;
+    int numloops;
+};
+
 static
 void
 init_sem(void)
@@ -48,6 +54,17 @@ init_sem(void)
 			panic("threadfuntest: sem_create failed\n");
 		}
 	}
+}
+
+static
+void
+destroy_sem(void)
+{
+    if(tsem != NULL)
+    {
+        sem_destroy(tsem);
+        tsem = NULL;
+    }
 }
 
 /*
@@ -62,36 +79,42 @@ init_sem(void)
  */
 static
 void
-testthread(void *junk, unsigned long num)
+testthread(void *vinfo, unsigned long x)
 {
-	int ch = '0' + num;
-
-	(void)junk;
-
-	putch(ch);
+    struct TestInfo* info = vinfo;
+	int ch = '0' + x;
+    int i, j;
+  
+    for(i = 0; i < info->numloops; ++i)
+    {
+        putch(ch);
+        
+        for(j = 0; j < 10000; ++j)
+            ;
+    }
 
 	V(tsem);
 }
 
 static
 void
-runthreads(int numthreads)
+runthreads(struct TestInfo* info)
 {
 	char name[16];
 	int i, result;
 
-	for (i=0; i<numthreads; i++) {
+	for (i=0; i<info->numthreads; i++) {
 		snprintf(name, sizeof(name), "threadfuntest%d", i);
 		result = thread_fork(name, NULL,
 				     testthread,
-				     NULL, i);
+				     info, i);
 		if (result) {
 			panic("threadfuntest: thread_fork failed %s)\n", 
 			      strerror(result));
 		}
 	}
 
-	for (i=0; i<numthreads; i++) {
+	for (i=0; i<info->numthreads; i++) {
 		P(tsem);
 	}
 }
@@ -100,20 +123,29 @@ runthreads(int numthreads)
 int
 threadfuntest(int nargs, char **args)
 {
+    struct TestInfo info;
+    
+    if(nargs < 3) {
+        kprintf("Usage:  tfun <number_of_threads> <number_of_loops>\n");
+    }
     if(nargs < 2) {
-        kprintf("Usage:  tfun <number_of_threads>\n");
-        kprintf("Unable to start thread fun test, missing argument\n");
-        return 1;
+        kprintf("Number of threads parameter missing, defaulting to 5 threads.\n");
+        info.numthreads = 5;
+    } else {
+        info.numthreads = atoi(args[1]);
     }
-    int numthreads = atoi(args[1]);
-    if(numthreads <= 0) {
-        kprintf("Unable to start thread fun test, need at least 1 thread\n");
-        return 1;
+    if(nargs < 3) {
+        kprintf("Number of loops parameter missing, defaulting to 8 loop iterations.\n");
+        info.numloops = 8;
+    } else {
+        info.numloops = atoi(args[2]);
     }
-
+    
 	init_sem();
-	kprintf("Starting thread fun test with %d threads...\n", numthreads);
-	runthreads(numthreads);
+	kprintf("Starting thread fun test with %d threads...\n", info.numthreads);
+	runthreads(&info);
+    
+    destroy_sem();
 	kprintf("\nThread test done.\n");
 
 	return 0;
