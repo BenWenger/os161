@@ -50,6 +50,17 @@ init_sem(void)
 	}
 }
 
+static
+void
+destroy_sem(void)
+{
+    if(tsem != NULL)
+    {
+        sem_destroy(tsem);
+        tsem = NULL;
+    }
+}
+
 /*
  * The idea with this is that you should see
  *
@@ -62,20 +73,25 @@ init_sem(void)
  */
 static
 void
-testthread(void *junk, unsigned long num)
+testthread(void *junk, unsigned long x)
 {
-	int ch = '0' + num;
+	int ch = '0' + (x & 0xFFFF);
+    int numloops = (x >> 16);
+    int i;
 
 	(void)junk;
 
-	putch(ch);
+    for(i = 0; i < numloops; ++i)
+    {
+        putch(ch);
+    }
 
 	V(tsem);
 }
 
 static
 void
-runthreads(int numthreads)
+runthreads(int numthreads, int numloops)
 {
 	char name[16];
 	int i, result;
@@ -84,7 +100,7 @@ runthreads(int numthreads)
 		snprintf(name, sizeof(name), "threadfuntest%d", i);
 		result = thread_fork(name, NULL,
 				     testthread,
-				     NULL, i);
+				     NULL, (i | (numloops << 16)));
 		if (result) {
 			panic("threadfuntest: thread_fork failed %s)\n", 
 			      strerror(result));
@@ -100,20 +116,30 @@ runthreads(int numthreads)
 int
 threadfuntest(int nargs, char **args)
 {
+    int numthreads;
+    int numloops;
+    
+    if(nargs < 3) {
+        kprintf("Usage:  tfun <number_of_threads> <number_of_loops>\n");
+    }
     if(nargs < 2) {
-        kprintf("Usage:  tfun <number_of_threads>\n");
-        kprintf("Unable to start thread fun test, missing argument\n");
-        return 1;
+        kprintf("Number of threads parameter missing, defaulting to 5 threads.\n");
+        numthreads = 5;
+    } else {
+        numthreads = atoi(args[1]);
     }
-    int numthreads = atoi(args[1]);
-    if(numthreads <= 0) {
-        kprintf("Unable to start thread fun test, need at least 1 thread\n");
-        return 1;
+    if(nargs < 3) {
+        kprintf("Number of loops parameter missing, defaulting to 3 loop iterations.\n");
+        numloops = 3;
+    } else {
+        numloops = atoi(args[2]);
     }
-
+    
 	init_sem();
 	kprintf("Starting thread fun test with %d threads...\n", numthreads);
-	runthreads(numthreads);
+	runthreads(numthreads, numloops);
+    
+    destroy_sem();
 	kprintf("\nThread test done.\n");
 
 	return 0;
