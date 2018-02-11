@@ -114,7 +114,7 @@ runthreads(struct TestInfo* info)
 		}
 	}
 
-	for (i=0; i<numthreads; i++) {
+	for (i=0; i<info->numthreads; i++) {
 		P(tsem);
 	}
 }
