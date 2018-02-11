@@ -437,6 +437,7 @@ file		test/bitmaptest.c
 file		test/lab4test.c
 file		test/threadtest.c
 file		test/threadfun.c
+file		test/proj1_tests.c
 file		test/tt3.c
 file		test/synchtest.c
 file		test/malloctest.c

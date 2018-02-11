@@ -59,10 +59,13 @@ int threadtest(int, char **);
 int threadtest2(int, char **);
 int threadtest3(int, char **);
 int threadfuntest(int, char **);
+int unsafethreadcounter(int, char **);
+int lockthreadcounter(int, char **);
+int spinlockthreadcounter(int, char **);
 int semtest(int, char **);
 int locktest(int, char **);
-int cvtest(int, char **);
-
+int cvtest(int, char **); 
+    
 #ifdef UW
 /* Another thread and synchronization test */
 int uwlocktest1(int, char **);
