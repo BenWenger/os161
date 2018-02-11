@@ -142,7 +142,7 @@ threadfuntest(int nargs, char **args)
     }
     
 	init_sem();
-	kprintf("Starting thread fun test with %d threads...\n", numthreads);
+	kprintf("Starting thread fun test with %d threads...\n", info.numthreads);
 	runthreads(&info);
     
     destroy_sem();
