@@ -140,11 +140,12 @@ runthreads(int numthreads, int numloops)
 		}
 	}
 
-	for (i=0; i<info->numthreads; i++) {
+	for (i=0; i < numthreads; i++) {
 		P(tsem);
 	}
 }
 
+static
 int doProj1Test(int nargs, char** args)
 {
     int numthreads;
