@@ -103,7 +103,7 @@ runthreads(struct TestInfo* info)
 	char name[16];
 	int i, result;
 
-	for (i=0; i<numthreads; i++) {
+	for (i=0; i<info->numthreads; i++) {
 		snprintf(name, sizeof(name), "threadfuntest%d", i);
 		result = thread_fork(name, NULL,
 				     testthread,
