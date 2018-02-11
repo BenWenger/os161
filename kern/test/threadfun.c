@@ -38,6 +38,12 @@
 
 static struct semaphore *tsem = NULL;
 
+struct TestInfo
+{
+    int numthreads;
+    int numloops;
+};
+
 static
 void
 init_sem(void)
@@ -73,17 +79,18 @@ destroy_sem(void)
  */
 static
 void
-testthread(void *junk, unsigned long x)
+testthread(void *vinfo, unsigned long x)
 {
-	int ch = '0' + (x & 0xFFFF);
-    int numloops = (x >> 16);
-    int i;
-
-	(void)junk;
-
+    struct TestInfo* info = vinfo;
+	int ch = '0' + x;
+    int i, j;
+  
     for(i = 0; i < numloops; ++i)
     {
         putch(ch);
+        
+        for(j = 0; j < 10000; ++j)
+            ;
     }
 
 	V(tsem);
@@ -91,7 +98,7 @@ testthread(void *junk, unsigned long x)
 
 static
 void
-runthreads(int numthreads, int numloops)
+runthreads(struct TestInfo* info)
 {
 	char name[16];
 	int i, result;
@@ -100,7 +107,7 @@ runthreads(int numthreads, int numloops)
 		snprintf(name, sizeof(name), "threadfuntest%d", i);
 		result = thread_fork(name, NULL,
 				     testthread,
-				     NULL, (i | (numloops << 16)));
+				     info, i);
 		if (result) {
 			panic("threadfuntest: thread_fork failed %s)\n", 
 			      strerror(result));
@@ -116,28 +123,27 @@ runthreads(int numthreads, int numloops)
 int
 threadfuntest(int nargs, char **args)
 {
-    int numthreads;
-    int numloops;
+    struct TestInfo info;
     
     if(nargs < 3) {
         kprintf("Usage:  tfun <number_of_threads> <number_of_loops>\n");
     }
     if(nargs < 2) {
         kprintf("Number of threads parameter missing, defaulting to 5 threads.\n");
-        numthreads = 5;
+        info.numthreads = 5;
     } else {
-        numthreads = atoi(args[1]);
+        info.numthreads = atoi(args[1]);
     }
     if(nargs < 3) {
-        kprintf("Number of loops parameter missing, defaulting to 3 loop iterations.\n");
-        numloops = 3;
+        kprintf("Number of loops parameter missing, defaulting to 8 loop iterations.\n");
+        info.numloops = 8;
     } else {
-        numloops = atoi(args[2]);
+        info.numloops = atoi(args[2]);
     }
     
 	init_sem();
 	kprintf("Starting thread fun test with %d threads...\n", numthreads);
-	runthreads(numthreads, numloops);
+	runthreads(&info);
     
     destroy_sem();
 	kprintf("\nThread test done.\n");
