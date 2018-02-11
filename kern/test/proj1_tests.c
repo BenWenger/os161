@@ -177,7 +177,7 @@ int doProj1Test(int nargs, char** args)
     
     destroy_all();
     
-	kprintf("\nThread test done.\nExpected counter value:  %ul\nActual counter value:  %ul\n\n", expected, test_ctr);
+	kprintf("\nThread test done.\nExpected counter value:  %lu\nActual counter value:  %lu\n\n", expected, test_ctr);
     
     if(test_ctr == expected) {
         kprintf("TEST PASSED\n\n");
