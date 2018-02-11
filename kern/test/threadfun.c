@@ -85,7 +85,7 @@ testthread(void *vinfo, unsigned long x)
 	int ch = '0' + x;
     int i, j;
   
-    for(i = 0; i < numloops; ++i)
+    for(i = 0; i < info->numloops; ++i)
     {
         putch(ch);
         
