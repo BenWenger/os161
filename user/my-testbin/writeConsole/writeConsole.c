@@ -1,11 +1,12 @@
 /*
  * An example program.
  */
+#include <stdio.h>
 #include <unistd.h>
 
 int
 main()
 {
-	reboot(RB_POWEROFF);
+    printf("This is a test of the user prog system...\n");
 	return 0; /* avoid compiler warnings */
 }
