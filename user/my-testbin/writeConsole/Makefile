@@ -2,7 +2,7 @@
 TOP=../../..
 .include "$(TOP)/mk/os161.config.mk"
 
-PROG=example
+PROG=writeConsole
 SRCS=$(PROG).c
 
 BINDIR=/my-testbin
