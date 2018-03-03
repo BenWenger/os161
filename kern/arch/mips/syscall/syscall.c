@@ -120,6 +120,9 @@ syscall(struct trapframe *tf)
 	  /* sys__exit does not return, execution should not get here */
 	  panic("unexpected return from sys__exit");
 	  break;
+	case SYS_fork:
+	  err = sys_fork((pid_t *)&retval);
+	  break;
 	case SYS_getpid:
 	  err = sys_getpid((pid_t *)&retval);
 	  break;
