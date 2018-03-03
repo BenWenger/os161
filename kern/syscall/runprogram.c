@@ -54,6 +54,7 @@
 int
 runprogram(char *progname)
 {
+    struct proc* p = curproc;
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
@@ -62,6 +63,8 @@ runprogram(char *progname)
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
+        proc_remthread(curthread);
+        proc_destroy(p);
 		return result;
 	}
 
@@ -72,6 +75,9 @@ runprogram(char *progname)
 	as = as_create();
 	if (as ==NULL) {
 		vfs_close(v);
+        as_destroy(as);
+        proc_remthread(curthread);
+        proc_destroy(p);
 		return ENOMEM;
 	}
 
@@ -84,6 +90,10 @@ runprogram(char *progname)
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
+        as_deactivate();
+        as_destroy(as);
+        proc_remthread(curthread);
+        proc_destroy(p);
 		return result;
 	}
 
@@ -94,6 +104,10 @@ runprogram(char *progname)
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
+        as_deactivate();
+        as_destroy(as);
+        proc_remthread(curthread);
+        proc_destroy(p);
 		return result;
 	}
 
