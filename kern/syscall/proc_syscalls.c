@@ -71,7 +71,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
     // Create a new user process
     //   proc_create_runprogram says that it expects to be called for all new procs -- including those
     //   made with fork(). So use it here to make the child process.
-    childproc = proc_create_runprogram(curproc->name);
+    childproc = proc_create_runprogram("forked");       // that's a bad name, whatever
     if(childproc == NULL) {
         return EMPROC;  // probably wrong error code but I don't see one that fits better
     }
