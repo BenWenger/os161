@@ -95,7 +95,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
     // So now we have duplicated all the memory with as_copy.  We have duplicated all the regs with 
     //   the trapframe.  The trapframe also indicates where the PC is, so we just need to enter user
     //   code at that new trapframe and our process will be forked!
-    result = thread_fork(childproc->name, childproc,
+    result = thread_fork(curthread->name, childproc,
         &enter_fork_thread, childtf, 0);
     if(result)
     {
