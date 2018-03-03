@@ -4,7 +4,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <stdio.h>
-
+/*
 int
 main()
 {
@@ -21,5 +21,28 @@ main()
     {
         printf("CHILD THREAD:  My pid is %d", getpid());
     }
-	return 0; /* avoid compiler warnings */
+	return 0;
+}
+*/
+
+int
+main()
+{
+    pid_t result;
+    
+    result = fork();
+    
+    if(result)          // we are the parent
+    {
+        for(int i = 0; i < 5000; ++i) {
+            printf("P");
+        }
+    }
+    else
+    {
+        for(int i = 0; i < 5000; ++i) {
+            printf("C");
+        }
+    }
+	return 0;
 }
