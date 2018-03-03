@@ -1,23 +1,25 @@
 /*
  * An example program.
  */
+#include <sys/wait.h>
 #include <unistd.h>
+#include <stdio.h>
 
 int
 main()
 {
-    pid_t result, mypid;
+    pid_t result;
     
     result = fork();
     
     if(result)          // we are the parent
     {
         waitpid(result, NULL, 0);
-        printf("PARENT THREAD:  My child was %d, I am %d\n", result, get_pid());
+        printf("PARENT THREAD:  My child was %d, I am %d\n", result, getpid());
     }
     else
     {
-        printf("CHILD THREAD:  My pid is %d", get_pid());
+        printf("CHILD THREAD:  My pid is %d", getpid());
     }
 	return 0; /* avoid compiler warnings */
 }
