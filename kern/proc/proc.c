@@ -92,7 +92,7 @@ remove_from_proc_table(struct proc* p)
     KASSERT(p != NULL);
     KASSERT(p->pid >= __PID_MIN);
     KASSERT(p->pid <= __PID_MAX);
-    KASSERT(proc_table != NULL)
+    KASSERT(proc_table != NULL);
     KASSERT(proc_table[ p->pid - __PID_MIN ] == p);
     
     proc_table[ p->pid - __PID_MIN ] = NULL;
