@@ -56,6 +56,7 @@ enter_fork_thread(void* temp_tf, unsigned long unused)
     //   so copy that temporary tf onto our stack
     struct trapframe tf = *((struct trapframe*)(temp_tf));
     kfree(temp_tf);
+    tf->tf_epc += 4;
     mips_usermode(&tf);
     
     (void)unused;
