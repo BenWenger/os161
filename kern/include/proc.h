@@ -86,6 +86,10 @@ void proc_bootstrap(void);
 /* Create a fresh process for use by runprogram(). */
 struct proc *proc_create_runprogram(const char *name);
 
+/* Set the exit code for a process */
+void proc_setexitcode(struct proc* proc, int exitcode);
+pid_t proc_waitpid(pid_t pid, int* exitcode);
+
 /* Destroy a process. */
 void proc_destroy(struct proc *proc);
 
