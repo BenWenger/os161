@@ -56,7 +56,8 @@ enter_fork_thread(void* temp_tf, unsigned long unused)
     //   so copy that temporary tf onto our stack
     struct trapframe tf = *((struct trapframe*)(temp_tf));
     kfree(temp_tf);
-    tf->tf_epc += 4;
+    tf.tf_v0 = 0;       // return value of zero to indicate this is the child process
+    tf.tf_epc += 4;     // move past the syscall
     mips_usermode(&tf);
     
     (void)unused;
@@ -105,8 +106,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
         return result;
     }
     
-    if(curproc == childproc)        *retval = 2;        // todo replace this with an actual PID
-    else                            *retval = 0;
+    *retval = 2;        // todo replace this with the actual PID
     return 0;
 }
 
