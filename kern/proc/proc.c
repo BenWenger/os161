@@ -49,7 +49,8 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <synch.h>
-#include <kern/fcntl.h>  
+#include <kern/fcntl.h> 
+#include <kern/limits.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -66,9 +67,70 @@ static unsigned int proc_count;
 /* it would be better to use a lock here, but we use a semaphore because locks are not implemented in the base kernel */ 
 static struct semaphore *proc_count_mutex;
 /* used to signal the kernel menu thread when there are no processes */
-struct semaphore *no_proc_sem;   
+struct semaphore *no_proc_sem;
+
 #endif  // UW
 
+/* The proc table!      */
+static struct proc** proc_table;
+#define PROC_TABLE_SIZE     (__PID_MAX - __PID_MIN + 1)
+static pid_t next_pid;
+static struct semaphore *proc_table_mutex;
+
+static void
+inc_next_pid()
+{
+    if(next_pid == __PID_MAX)
+        next_pid = __PID_MIN;
+    else
+        ++next_pid;
+}
+
+static void
+remove_from_proc_table(struct proc* p)
+{
+    KASSERT(p != NULL);
+    KASSERT(p->id >= __PID_MIN);
+    KASSERT(p->id <= __PID_MAX);
+    KASSERT(proc_table != NULL)
+    KASSERT(proc_table[ p->id - __PID_MIN ] == p);
+    
+    proc_table[ p->id - __PID_MIN ] = NULL;
+}
+
+static int
+add_proc_to_table(struct proc* p)
+{
+    pid_t orig;
+    
+    KASSERT(p != NULL);
+    
+    if(!proc_table)     // if proc_table hasn't been initialized yet, this is kproc -- just give it a pid of 1, don't put it in the table
+    {
+        p->pid = 1;
+        return 0;
+    }
+    
+    P(proc_table_mutex);
+    orig = next_pid;
+    while(1)
+    {
+        if(!proc_table[next_pid - __PID_MIN])   break;
+        inc_next_pid();
+        if(next_pid == orig)        // no more available pids
+        {
+            V(proc_table_mutex);
+            return 1;
+        }
+    }
+    
+    p->pid = next_pid;
+    proc_table[next_pid - __PID_MIN] = p;
+    inc_next_pid();
+    V(proc_table_mutex);
+    
+    return 0;
+}
 
 
 /*
@@ -89,6 +151,12 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
+    
+    if(add_proc_to_table(proc)) {
+        kfree(proc->p_name);
+        kfree(proc);
+        return NULL;
+    }
 
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
@@ -165,6 +233,8 @@ proc_destroy(struct proc *proc)
 
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
+    
+    remove_from_proc_table(proc);
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -193,10 +263,28 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
+    int i;
+    
+    proc_table = NULL;
   kproc = proc_create("[kernel]");
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
+  
+    // allocate the full proc table in one go?  Is it not worth it to make this dynamic?
+    proc_table = kmalloc( sizeof(*proc_table) * PROC_TABLE_SIZE );
+    if(proc_table == NULL) {
+        panic("could not create proc_table\n");
+    }
+    for(i = 0; i < PROC_TABLE_SIZE; ++i)
+        proc_table[i] = NULL;
+    
+    next_pid = __PID_MIN;
+    proc_table_mutex = sem_create("proc_table_mutex",1);
+    if (proc_table_mutex) {
+        panic("could not create proc_table_mutex semaphore\n");
+    }
+  
 #ifdef UW
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);
