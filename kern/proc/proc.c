@@ -90,12 +90,12 @@ static void
 remove_from_proc_table(struct proc* p)
 {
     KASSERT(p != NULL);
-    KASSERT(p->id >= __PID_MIN);
-    KASSERT(p->id <= __PID_MAX);
+    KASSERT(p->pid >= __PID_MIN);
+    KASSERT(p->pid <= __PID_MAX);
     KASSERT(proc_table != NULL)
-    KASSERT(proc_table[ p->id - __PID_MIN ] == p);
+    KASSERT(proc_table[ p->pid - __PID_MIN ] == p);
     
-    proc_table[ p->id - __PID_MIN ] = NULL;
+    proc_table[ p->pid - __PID_MIN ] = NULL;
 }
 
 static int
