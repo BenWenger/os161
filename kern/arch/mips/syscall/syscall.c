@@ -120,6 +120,9 @@ syscall(struct trapframe *tf)
 	  /* sys__exit does not return, execution should not get here */
 	  panic("unexpected return from sys__exit");
 	  break;
+	case SYS_fork:
+	  err = sys_fork((pid_t *)&retval, tf);
+	  break;
 	case SYS_getpid:
 	  err = sys_getpid((pid_t *)&retval);
 	  break;
@@ -168,16 +171,3 @@ syscall(struct trapframe *tf)
 	KASSERT(curthread->t_iplhigh_count == 0);
 }
 
-/*
- * Enter user mode for a newly forked process.
- *
- * This function is provided as a reminder. You need to write
- * both it and the code that calls it.
- *
- * Thus, you can trash it and do things another way if you prefer.
- */
-void
-enter_forked_process(struct trapframe *tf)
-{
-	(void)tf;
-}

@@ -9,6 +9,7 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+#include <mips/trapframe.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -46,6 +47,67 @@ void sys__exit(int exitcode) {
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
   panic("return from thread_exit in sys_exit\n");
+}
+
+static void
+enter_fork_thread(void* temp_tf, unsigned long unused)
+{
+    // Apparently the trap frame needs to exist on the stack of this thread
+    //   so copy that temporary tf onto our stack
+    struct trapframe tf = *((struct trapframe*)(temp_tf));
+    kfree(temp_tf);
+    tf.tf_v0 = 0;       // return value of zero to indicate this is the child process
+    tf.tf_epc += 4;     // move past the syscall
+    mips_usermode(&tf);
+    
+    (void)unused;
+}
+
+int
+sys_fork(pid_t *retval, struct trapframe *tf)
+{
+    struct proc* childproc;
+    struct trapframe* childtf;
+    int result;
+    
+    // Create a new user process
+    //   proc_create_runprogram says that it expects to be called for all new procs -- including those
+    //   made with fork(). So use it here to make the child process.
+    childproc = proc_create_runprogram("forked");       // that's a bad name, whatever
+    if(childproc == NULL) {
+        return EMPROC;  // probably wrong error code but I don't see one that fits better
+    }
+    
+    // We shouldn't have an AS yet -- copy it from this proc
+    KASSERT(childproc->p_addrspace == NULL);
+    result = as_copy( curproc->p_addrspace, &childproc->p_addrspace );
+    if(result) {
+        proc_destroy(childproc);
+        return result;
+    }
+    
+    // Rather than make a semaphore and lock on it to copy the trapframe, just make a copy of it now
+    childtf = kmalloc(sizeof(struct trapframe));
+    if(!childtf) {
+        proc_destroy(childproc);
+        return ENOMEM;
+    }
+    *childtf = *tf;
+    
+    // So now we have duplicated all the memory with as_copy.  We have duplicated all the regs with 
+    //   the trapframe.  The trapframe also indicates where the PC is, so we just need to enter user
+    //   code at that new trapframe and our process will be forked!
+    result = thread_fork("forked_t", childproc,
+        &enter_fork_thread, childtf, 0);
+    if(result)
+    {
+        kfree(childtf);
+        proc_destroy(childproc);
+        return result;
+    }
+    
+    *retval = 2;        // todo replace this with the actual PID
+    return 0;
 }
 
 
