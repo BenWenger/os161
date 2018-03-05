@@ -128,7 +128,7 @@ ptbl_create()
     for(i = 0; i < proc_table_size; ++i)    proc_table[i] = NULL;
     
     proc_table_mutex = sem_create("proc_table_mutex",1);
-    if (proc_table_mutex) {
+    if (!proc_table_mutex) {
         panic("could not create proc_table_mutex semaphore\n");
     }
 }
@@ -355,7 +355,6 @@ proc_create(const char *name)
         return NULL;
     }
     
-
     spinlock_init(&proc->p_lock);
 	threadarray_init(&proc->p_threads);
 
