@@ -165,7 +165,8 @@ ptbl_addproc(struct proc* proc)
     //    just ignore this
     if(proc_table_mutex == NULL)
         return 0;
-    
+
+    proc->parent_id = curproc->pid;    
     P(proc_table_mutex);
     
     // find an empty slot
@@ -241,6 +242,10 @@ ptbl_removeproc(struct proc* p)
                 lock_release(sub->lk);
                 P(proc_table_mutex);
             }
+        }
+        else                        // otherwise, we're uninterested
+        {
+            lock_release(sub->lk);
         }
     }
     V(proc_table_mutex);
@@ -354,7 +359,7 @@ proc_create(const char *name)
         kfree(proc);
         return NULL;
     }
-    
+ 
     spinlock_init(&proc->p_lock);
 	threadarray_init(&proc->p_threads);
 
@@ -401,7 +406,6 @@ proc_destroy(struct proc *proc)
 		proc->p_cwd = NULL;
 	}
 
-
 #ifndef UW  // in the UW version, space destruction occurs in sys_exit, not here
 	if (proc->p_addrspace) {
 		/*
@@ -431,11 +435,9 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
     
-    ptbl_removeproc(proc);
-
 	kfree(proc->p_name);
     
-    // do not kfree proc here because the proc can still exist in our proc_table
+    // do not kfree(proc) here because the proc can still exist in our proc_table
     //    instead, call ptbl_removeproc and that will kfree it (if it's ready to be kfreed)
     ptbl_removeproc(proc);
 
