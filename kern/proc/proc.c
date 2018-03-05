@@ -164,7 +164,11 @@ ptbl_addproc(struct proc* proc)
     // if the table mutex hasn't been created yet -- this is kproc.  We don't want to add kproc
     //    just ignore this
     if(proc_table_mutex == NULL)
+    {
+        proc->parent_id = 0;
+        proc->pid = 1;
         return 0;
+    }
 
     proc->parent_id = curproc->pid;    
     P(proc_table_mutex);
