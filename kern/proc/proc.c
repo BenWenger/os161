@@ -49,7 +49,8 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <synch.h>
-#include <kern/fcntl.h>  
+#include <kern/fcntl.h> 
+#include <kern/limits.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -66,9 +67,248 @@ static unsigned int proc_count;
 /* it would be better to use a lock here, but we use a semaphore because locks are not implemented in the base kernel */ 
 static struct semaphore *proc_count_mutex;
 /* used to signal the kernel menu thread when there are no processes */
-struct semaphore *no_proc_sem;   
+struct semaphore *no_proc_sem;
+
 #endif  // UW
 
+
+/*********************************************
+
+This is my proc table!
+
+It's a resizable array of proc*s.  When a proc is created, it is assigned a pid and
+inserted into this array.  When a proc is destroyed, the entry in this array **may persist**
+a little longer, so that other processes can poll the state and exit code.
+
+Specifically:
+- A "parent" process can poll the state of any of its children. Therefore when a child
+    proc exits, its table entry must persist.
+- When a parent process exits, all of its children are iterated, and any children
+    that have exited are removed from the table.  Any children still running have their
+    parent_pid cleared.
+- When ANY proc is destroyed, if its parent_pid is cleared (parent has exited already),
+    or if the parent_pid is 1 (parent is kproc), the proc is immediately removed from the
+    table.
+- Only "parent" procs can waitpid() on their children. If a proc tries to waitpid() on
+    a proc that isn't a direct child, waitpid() will fail.
+    
+
+One other thing to note about this table:  the index for the table is "pid - __PID_MIN",
+so do not access the table with the pid directly.
+
+
+A note about deadlock:
+    Once you acquire proc_table_mutex, DO NOT ATTEMPT TO ACQUIRE ANY PROC'S LOCK.
+It is OK to have both acquired at the same time AS LONG AS THE PROC'S LOCK IS ACQUIRED
+FIRST.
+    Don't acquire more than one proc's lock at a time.
+
+***********************************************/
+
+#define MAX_PTBL_SIZE       (__PID_MAX - PIX_MIN + 1)
+#define START_PTBL_SIZE     20
+
+static struct semaphore* proc_table_mutex;
+static struct proc** proc_table;        // I probably could use the 'array' lib for this, but I looked at it and it's a pain
+static unsigned proc_table_size;        //      and really, all I need is a simple realloc
+
+static void
+ptbl_create()
+{
+    KASSERT( proc_table_mutex == NULL );
+    KASSERT( proc_table == NULL );
+    
+    proc_table_size = START_PTBL_SIZE;
+    proc_table = kmalloc( sizeof(*proc_table) * proc_table_size );
+    if(proc_table == NULL) {
+        panic("could not create proc_table\n");
+    }
+    for(i = 0; i < proc_table_size; ++i)    proc_table[i] = NULL;
+    
+    proc_table_mutex = sem_create("proc_table_mutex",1);
+    if (proc_table_mutex) {
+        panic("could not create proc_table_mutex semaphore\n");
+    }
+}
+
+static int
+unsafe_ptbl_realloc()           // unsafe because it assumes proc_table_mutex is held
+{
+    unsigned i;
+    unsigned newsize;
+    struct proc** x;
+    
+    newsize = proc_table_size * 2;
+    if(newsize > MAX_PTBL_SIZE)     newsize = MAX_PTBL_SIZE;
+    if(newsize <= proc_table_size)  return 1;       // can't allocate any more
+    
+    x = kmalloc( sizeof(*x) * newsize );
+    if(x == NULL)                   return 1;       // no more mem!!
+    
+    for(i = 0; i < proc_table_size; ++i)        x[i] = proc_table[i];
+    for(i = proc_table_size; i < newsize; ++i)  x[i] = NULL;
+    
+    kfree(proc_table);
+    proc_table = x;
+    proc_table_size = newsize;
+    return 0;
+}
+
+static int
+ptbl_addproc(struct proc* proc)
+{
+    unsigned i;
+    
+    // if the table mutex hasn't been created yet -- this is kproc.  We don't want to add kproc
+    //    just ignore this
+    if(proc_table_mutex == NULL)
+        return 0;
+    
+    P(proc_table_mutex);
+    
+    // find an empty slot
+    for(i = 0; i < proc_table_size; ++i)
+    {
+        if(proc_table[i] == NULL)       break;  // slot i is available!
+    }
+    
+    // if there was no empty slot, realloc to get a slot
+    if(i == proc_table_size)
+    {
+        if(unsafe_ptbl_realloc())
+        {
+            V(proc_table_mutex);
+            return 1;           // we couldn't realloc -- can't add this proc
+        }
+    }
+    
+    proc_table[i] = proc;
+    proc->pid = (pid_t)(i + __PID_MIN);
+    V(proc_table_mutex);
+    return 0;
+}
+
+static void
+ptbl_removeproc(struct proc* p)
+{
+    unsigned i;
+    struct proc* sub;
+    pid_t mypid;
+    pid_t myparentpid;
+    
+    KASSERT(p != NULL);
+    
+    lock_acquire(p->lk);
+    mypid = p->pid;
+    myparentpid = p->parent_id;
+    lock_release(p->lk);
+    
+    KASSERT(mypid >= __PID_MIN);
+    KASSERT(mypid <= __PID_MAX);
+    
+    // Look for our children and clean them up / mark them to be cleaned up
+    //   This is O(n) since I traverse the entire table looking for children.
+    // A more optimized approach might be to have a proc keep track of its
+    // children, but that'd be more work and I'm not sure it'd be much better.
+    
+    P(proc_table_mutex);
+    for(i = 0; i < proc_table_size; ++i)        
+    {
+        if(proc_table[i] == NULL)       continue;   // this entry is already empty -- skip it
+        sub = proc_table[i];
+        
+        V(proc_table_mutex);        // release proc table mutex
+        lock_acquire(sub->lk);      // before acquiring proc mutex
+        
+        if(sub->parent_id == mypid)   // this entry is one of our children
+        {
+            if(sub->running == 0)   // the child has already exited
+            {
+                // the child has already exited.  Clean it up!
+                lock_release(sub->lk);
+                lock_destroy(sub->lk);
+                cv_destroy(sub->cv);
+                kfree(sub);
+                P(proc_table_mutex);
+                proc_table[i] = NULL;
+            }
+            else
+            {
+                // The child is still running, just mark the parent as dead
+                sub->parent_id = 0;
+                lock_release(sub->lk);
+                P(proc_table_mutex);
+            }
+        }
+    }
+    V(proc_table_mutex);
+    
+    // now... remove US!
+    if(myparentpid == 0 || myparentpid == 1)        // if our parent has exited, or our parent is kproc
+    {
+        lock_destroy(p->lk);
+        cv_destroy(p->cv);
+        kfree(sub);
+        P(proc_table_mutex);
+        proc_table[mypid - __PID_MIN] = NULL;
+        V(proc_table_mutex);
+    }
+    else
+    {
+        // our parent is still around, mark us as no longer running,
+        //   and broadcast so we wake up any waiting procs
+        lock_acquire(p->lk);
+        p->running = 0;
+        cv_broadcase(p->cv, p->lk);
+        lock_release(p->lk);
+    }
+}
+
+/* Set the exit code for a process */
+void proc_setexitcode(struct proc* proc, int exitcode)
+{
+    lock_acquire(proc->lk);
+    proc->exitcode = exitcode;
+    lock_release(proc->lk);
+}
+
+int proc_waitpid(pid_t waitpid, int* exitcode)
+{
+    struct proc* targetproc;
+    pid_t mypid;
+    
+    if(waitpid < __PID_MIN)     return ESRCH;
+    if(waitpid > __PID_MAX)     return ESRCH;
+    
+    // get my pid
+    mypid = curproc->pid;
+    
+    // get the target process
+    targetproc = NULL;
+    P(proc_table_mutex);
+    if(waitpid - __PID_MIN < proc_table_size)
+        targetproc = proc_table[waitpid - __PID_MIN];
+    V(proc_table_mutex);
+    
+    if(targetproc == NULL)      return ESRCH;
+    
+    // is the target proc one of our children?
+    lock_acquire(targetproc->lk);
+    if(targetproc->parent_id == mypid)
+    {
+        // it is a child!  Wait for it!
+        cv_wait(targetproc->cv, targetproc->lk);
+        *exitcode = targetproc->exitcode;
+        lock_release(targetproc->lk);
+        return 0;       // success!
+    }
+    else
+    {
+        // it is not a child!  We're uninterested
+        lock_release(targetproc->lk);
+        return ECHILD;
+    }
+}
 
 
 /*
@@ -89,9 +329,33 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
+    
+    proc->cv = cv_create("proc_cv");
+    if(proc->cv == NULL) {
+        kfree(proc->p_name);
+        kfree(proc);
+        return NULL;
+    }
+    
+    proc->lk = lock_create("proc_lk");
+    if(proc->lk == NULL) {
+        cv_destroy(proc->cv);
+        kfree(proc->p_name);
+        kfree(proc);
+        return NULL;
+    }
+    
+    if(ptbl_addproc(proc)) {
+        lock_destroy(proc->lk);
+        cv_destroy(proc->cv);
+        kfree(proc->p_name);
+        kfree(proc);
+        return NULL;
+    }
+    
 
+    spinlock_init(&proc->p_lock);
 	threadarray_init(&proc->p_threads);
-	spinlock_init(&proc->p_lock);
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
@@ -165,9 +429,14 @@ proc_destroy(struct proc *proc)
 
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
+    
+    remove_from_proc_table(proc);
 
 	kfree(proc->p_name);
-	kfree(proc);
+    
+    // do not kfree proc here because the proc can still exist in our proc_table
+    //    instead, call ptbl_removeproc and that will kfree it (if it's ready to be kfreed)
+    ptbl_removeproc(proc);
 
 #ifdef UW
 	/* decrement the process count */
@@ -193,10 +462,16 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
+    proc_table = NULL;
+    proc_table_mutex = NULL;
+    
   kproc = proc_create("[kernel]");
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
+  
+  ptbl_create();
+  
 #ifdef UW
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);
