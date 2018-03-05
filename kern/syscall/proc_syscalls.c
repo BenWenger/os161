@@ -18,11 +18,10 @@ void sys__exit(int exitcode) {
 
   struct addrspace *as;
   struct proc *p = curproc;
-  /* for now, just include this to keep the compiler from complaining about
-     an unused variable */
-  (void)exitcode;
 
   DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+  
+  proc_setexitcode(p, exitcode);
 
   KASSERT(curproc->p_addrspace != NULL);
   as_deactivate();
@@ -106,7 +105,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
         return result;
     }
     
-    *retval = 2;        // todo replace this with the actual PID
+    *retval = childproc->pid;
     return 0;
 }
 
@@ -115,9 +114,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
 int
 sys_getpid(pid_t *retval)
 {
-  /* for now, this is just a stub that always returns a PID of 1 */
-  /* you need to fix this to make it work properly */
-  *retval = 1;
+  *retval = curproc->pid;
   return(0);
 }
 
@@ -132,20 +129,18 @@ sys_waitpid(pid_t pid,
   int exitstatus;
   int result;
 
-  /* this is just a stub implementation that always reports an
-     exit status of 0, regardless of the actual exit status of
-     the specified process.   
-     In fact, this will return 0 even if the specified process
-     is still running, and even if it never existed in the first place.
-
-     Fix this!
-  */
-
+  *retval = -1;     // -1 on error, so default to this (it's changed later if the call is successful)
   if (options != 0) {
     return(EINVAL);
   }
-  /* for now, just pretend the exitstatus is 0 */
-  exitstatus = 0;
+  
+  if(pid == curproc->pid)   // can't wait for yourself
+    return EINVAL;
+  
+    exitstatus = 0;
+    result = proc_waitpid(pid, &exitstatus);
+    if(result)      return result;
+    
   result = copyout((void *)&exitstatus,status,sizeof(int));
   if (result) {
     return(result);
