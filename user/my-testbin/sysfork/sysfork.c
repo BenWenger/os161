@@ -15,9 +15,9 @@ main()
     
     if(result)          // we are the parent
     {
-        waitpid(result, &i, 0);
+//        waitpid(result, &i, 0);
         printf("PARENT THREAD:  My child was %d, I am %d\n", result, getpid());
-        printf("Parent:  my child exited with code %d\n", i);
+//        printf("Parent:  my child exited with code %d\n", i);
     }
     else
     {
