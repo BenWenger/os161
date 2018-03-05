@@ -105,7 +105,7 @@ sys_fork(pid_t *retval, struct trapframe *tf)
         return result;
     }
     
-    *retval = 2;        // todo replace this with the actual PID
+    *retval = childproc->pid;
     return 0;
 }
 
@@ -129,19 +129,13 @@ sys_waitpid(pid_t pid,
   int exitstatus;
   int result;
 
-  /* this is just a stub implementation that always reports an
-     exit status of 0, regardless of the actual exit status of
-     the specified process.   
-     In fact, this will return 0 even if the specified process
-     is still running, and even if it never existed in the first place.
-
-     Fix this!
-  */
-
   *retval = -1;     // -1 on error, so default to this (it's changed later if the call is successful)
   if (options != 0) {
     return(EINVAL);
   }
+  
+  if(pid == curproc->pid)   // can't wait for yourself
+    return EINVAL;
   
     exitstatus = 0;
     result = proc_waitpid(pid, &exitstatus);
