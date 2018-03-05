@@ -111,7 +111,7 @@ FIRST.
 
 static struct semaphore* proc_table_mutex;
 static struct proc** proc_table;        // I probably could use the 'array' lib for this, but I looked at it and it's a pain
-static unsigned proc_table_size;        //      and really, all I need is a simple realloc
+static int proc_table_size;             //      and really, all I need is a simple realloc
 
 static void
 ptbl_create()
@@ -136,8 +136,8 @@ ptbl_create()
 static int
 unsafe_ptbl_realloc()           // unsafe because it assumes proc_table_mutex is held
 {
-    unsigned i;
-    unsigned newsize;
+    int i;
+    int newsize;
     struct proc** x;
     
     newsize = proc_table_size * 2;
@@ -159,7 +159,7 @@ unsafe_ptbl_realloc()           // unsafe because it assumes proc_table_mutex is
 static int
 ptbl_addproc(struct proc* proc)
 {
-    unsigned i;
+    int i;
     
     // if the table mutex hasn't been created yet -- this is kproc.  We don't want to add kproc
     //    just ignore this
@@ -193,7 +193,7 @@ ptbl_addproc(struct proc* proc)
 static void
 ptbl_removeproc(struct proc* p)
 {
-    unsigned i;
+    int i;
     struct proc* sub;
     pid_t mypid;
     pid_t myparentpid;
@@ -580,7 +580,7 @@ void
 proc_remthread(struct thread *t)
 {
 	struct proc *proc;
-	unsigned i, num;
+	int i, num;
 
 	proc = t->t_proc;
 	KASSERT(proc != NULL);
