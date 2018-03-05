@@ -366,6 +366,8 @@ proc_create(const char *name)
  
     spinlock_init(&proc->p_lock);
 	threadarray_init(&proc->p_threads);
+    proc->running = 1;
+    proc->exitcode = 0;
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
