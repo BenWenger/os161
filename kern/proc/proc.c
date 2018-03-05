@@ -354,6 +354,7 @@ proc_create(const char *name)
     }
     
 
+    spinlock_init(&proc->p_lock);
 	threadarray_init(&proc->p_threads);
 
 	/* VM fields */
