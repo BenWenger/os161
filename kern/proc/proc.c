@@ -52,6 +52,7 @@
 #include <kern/fcntl.h> 
 #include <kern/limits.h>
 #include <kern/errno.h>
+#include <kern/wait.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -279,7 +280,7 @@ ptbl_removeproc(struct proc* p)
 void proc_setexitcode(struct proc* proc, int exitcode)
 {
     lock_acquire(proc->lk);
-    proc->exitcode = exitcode;
+    proc->exitcode = _MKWAIT_EXIT(exitcode);
     lock_release(proc->lk);
 }
 
