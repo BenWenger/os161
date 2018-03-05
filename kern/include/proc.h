@@ -75,9 +75,9 @@ struct proc {
         // everything below this point needs to be protected
     struct cv*          cv;         // CV for waitpid
     struct lock*        lk;         // lock for this structure  (replacing the previous spinlock, so we can use it with our cv)
-    pid_t               parent_id;  // can be changed if parent exits
-    int                 exitcode;
-    int                 running;    // boolean:  0=process has exited, 1=process is still running
+    volatile pid_t      parent_id;  // can be changed if parent exits
+    volatile int        exitcode;
+    volatile int        running;    // boolean:  0=process has exited, 1=process is still running
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
