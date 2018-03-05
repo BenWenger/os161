@@ -2,7 +2,7 @@
 TOP=../../..
 .include "$(TOP)/mk/os161.config.mk"
 
-PROG=sysfork
+PROG=getpid
 SRCS=$(PROG).c
 
 BINDIR=/my-testbin
