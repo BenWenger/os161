@@ -217,7 +217,6 @@ ptbl_removeproc(struct proc* p)
     //   This is O(n) since I traverse the entire table looking for children.
     // A more optimized approach might be to have a proc keep track of its
     // children, but that'd be more work and I'm not sure it'd be much better.
-    
     P(proc_table_mutex);
     for(i = 0; i < proc_table_size; ++i)        
     {
@@ -259,7 +258,7 @@ ptbl_removeproc(struct proc* p)
     {
         lock_destroy(p->lk);
         cv_destroy(p->cv);
-        kfree(sub);
+        kfree(p);
         P(proc_table_mutex);
         proc_table[mypid - __PID_MIN] = NULL;
         V(proc_table_mutex);
