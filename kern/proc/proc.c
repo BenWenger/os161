@@ -171,7 +171,8 @@ ptbl_addproc(struct proc* proc)
         return 0;
     }
 
-    proc->parent_id = curproc->pid;    
+    proc->parent_id = curproc->pid;
+    KASSERT(proc->parent_id <= 1);
     P(proc_table_mutex);
     
     // find an empty slot
