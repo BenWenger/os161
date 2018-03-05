@@ -254,8 +254,10 @@ ptbl_removeproc(struct proc* p)
     V(proc_table_mutex);
     
     // now... remove US!
-    if(myparentpid == 0 || myparentpid == 1)        // if our parent has exited, or our parent is kproc
+    lock_acquire(p->lk);        // reacquire and check p->parent_id because it may have changed
+    if(p->parent_id == 0 || p->parent_id == 1) // if our parent has exited, or our parent is kproc
     {
+        lock_release(p->lk);
         lock_destroy(p->lk);
         cv_destroy(p->cv);
         kfree(p);
@@ -267,7 +269,6 @@ ptbl_removeproc(struct proc* p)
     {
         // our parent is still around, mark us as no longer running,
         //   and broadcast so we wake up any waiting procs
-        lock_acquire(p->lk);
         p->running = 0;
         cv_broadcast(p->cv, p->lk);
         lock_release(p->lk);
