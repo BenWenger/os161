@@ -51,6 +51,7 @@
 #include <synch.h>
 #include <kern/fcntl.h> 
 #include <kern/limits.h>
+#include <kern/errno.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -105,7 +106,7 @@ FIRST.
 
 ***********************************************/
 
-#define MAX_PTBL_SIZE       (__PID_MAX - PIX_MIN + 1)
+#define MAX_PTBL_SIZE       (__PID_MAX - __PID_MIN + 1)
 #define START_PTBL_SIZE     20
 
 static struct semaphore* proc_table_mutex;
@@ -115,6 +116,7 @@ static unsigned proc_table_size;        //      and really, all I need is a simp
 static void
 ptbl_create()
 {
+    int i;
     KASSERT( proc_table_mutex == NULL );
     KASSERT( proc_table == NULL );
     
@@ -259,7 +261,7 @@ ptbl_removeproc(struct proc* p)
         //   and broadcast so we wake up any waiting procs
         lock_acquire(p->lk);
         p->running = 0;
-        cv_broadcase(p->cv, p->lk);
+        cv_broadcast(p->cv, p->lk);
         lock_release(p->lk);
     }
 }
@@ -430,7 +432,7 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
     
-    remove_from_proc_table(proc);
+    ptbl_removeproc(proc);
 
 	kfree(proc->p_name);
     
