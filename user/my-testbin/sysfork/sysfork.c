@@ -19,7 +19,7 @@ main()
     }
     else
     {
-        printf("CHILD THREAD:  My pid is %d", getpid());
+        printf("CHILD THREAD:  My pid is %d\n", getpid());
     }
 	return 0;
 }
