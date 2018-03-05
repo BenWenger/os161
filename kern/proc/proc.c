@@ -172,7 +172,6 @@ ptbl_addproc(struct proc* proc)
     }
 
     proc->parent_id = curproc->pid;
-    KASSERT(proc->parent_id <= 1);
     P(proc_table_mutex);
     
     // find an empty slot
@@ -309,8 +308,11 @@ int proc_waitpid(pid_t waitpid, int* exitcode)
     lock_acquire(targetproc->lk);
     if(targetproc->parent_id == mypid)
     {
-        // it is a child!  Wait for it!
-        cv_wait(targetproc->cv, targetproc->lk);
+        // it is a child!
+        while( targetproc->running == 1 )       // wait for it to be done 
+        {
+            cv_wait(targetproc->cv, targetproc->lk);
+        }
         *exitcode = targetproc->exitcode;
         lock_release(targetproc->lk);
         return 0;       // success!
