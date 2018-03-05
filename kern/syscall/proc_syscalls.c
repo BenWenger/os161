@@ -18,11 +18,10 @@ void sys__exit(int exitcode) {
 
   struct addrspace *as;
   struct proc *p = curproc;
-  /* for now, just include this to keep the compiler from complaining about
-     an unused variable */
-  (void)exitcode;
 
   DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+  
+  proc_setexitcode(p, exitcode);
 
   KASSERT(curproc->p_addrspace != NULL);
   as_deactivate();
@@ -139,11 +138,15 @@ sys_waitpid(pid_t pid,
      Fix this!
   */
 
+  *retval = -1;     // -1 on error, so default to this (it's changed later if the call is successful)
   if (options != 0) {
     return(EINVAL);
   }
-  /* for now, just pretend the exitstatus is 0 */
-  exitstatus = 0;
+  
+    exitstatus = 0;
+    result = proc_waitpid(pid, &exitstatus);
+    if(result)      return result;
+    
   result = copyout((void *)&exitstatus,status,sizeof(int));
   if (result) {
     return(result);

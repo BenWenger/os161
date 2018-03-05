@@ -50,8 +50,6 @@ struct semaphore;
  */
 struct proc {
 	char *p_name;			/* Name of this process */
-    pid_t pid;
-	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
 
 	/* VM */
@@ -67,9 +65,18 @@ struct proc {
      system calls, since each process will need to keep track of all files
      it has opened, not just the console. */
   struct vnode *console;                /* a vnode for the console device */
-#endif
-
-	/* add more material here as needed */
+#endif    
+    // Everything below this line will stay alive even after the process exits, so that
+    //    exitcode/etc can be polled.  It will be destroyed once the process is removed
+    //    from the proc_table, which will happen when the parent process exits (unless
+    //    the parent process is kproc, in which case it will be removed immediately on exit)
+    pid_t               pid;        // this proc's pid   (nothing changes this, so acesses don't need to be protected)
+        // everything below this point needs to be protected
+    struct cv*          cv;         // CV for waitpid
+    struct lock*        lk;         // lock for this structure  (replacing the previous spinlock, so we can use it with our cv)
+    pid_t               parent_id;  // can be changed if parent exits
+    int                 exitcode;
+    int                 running;    // boolean:  0=process has exited, 1=process is still running
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -86,11 +93,7 @@ void proc_bootstrap(void);
 /* Create a fresh process for use by runprogram(). */
 struct proc *proc_create_runprogram(const char *name);
 
-/* Set the exit code for a process */
-void proc_setexitcode(struct proc* proc, int exitcode);
-pid_t proc_waitpid(pid_t pid, int* exitcode);
-
-/* Destroy a process. */
+/* Destroy a process. Note this may or may not remove it from the proc_table. */
 void proc_destroy(struct proc *proc);
 
 /* Attach a thread to a process. Must not already have a process. */
@@ -105,5 +108,8 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+/* Set the exit code for a process */
+void    proc_setexitcode(struct proc* proc, int exitcode);
+int     proc_waitpid(pid_t waitpid, int* exitcode);
 
 #endif /* _PROC_H_ */
