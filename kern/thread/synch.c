@@ -192,6 +192,9 @@ lock_acquire(struct lock *lock)
 {
     KASSERT(lock != NULL);
     
+    // can't lock in interrupt?
+    KASSERT(curthread->t_in_interrupt == false);
+    
     spinlock_acquire(&lock->spin_lock);
     KASSERT(lock->owned_thread != curthread);   // can't re-lock a lock you already own!
     
