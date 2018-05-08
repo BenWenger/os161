@@ -38,6 +38,9 @@
 #include <addrspace.h>
 #include <vm.h>
 
+static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static 
+
 void
 vm_bootstrap(void)
 {
