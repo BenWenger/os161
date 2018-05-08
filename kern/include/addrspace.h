@@ -46,6 +46,12 @@ struct vnode;
  *
  * You write this.
  */
+ 
+struct addrspace_block {
+    vaddr_t     vAddr;
+    paddr_t     pAddr;
+    size_t      nPages;
+};
 
 struct addrspace {
   vaddr_t as_vbase1;
