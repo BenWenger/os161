@@ -38,13 +38,90 @@
 #include <addrspace.h>
 #include <vm.h>
 
-static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
-static 
+/*
+
+    To see if a page of memory is allocated, I have a 'pageUse' table.  This table is basically
+    a big array where each individual bit indicates if a page is available (0) or allocated (1).
+    
+    Example:  If there are 1000 pages of physical memory, the pageUse table would need to be
+    ceil(1000/8) = 125 bytes wide:
+        pageUse[0] & 0x01  =   state of physical page 0
+        pageUse[0] & 0x02  =   state of physical page 1
+            ...
+        pageUse[0] & 0x80  =   state of physical page 7
+        pageUse[1] & 0x01  =   state of physical page 8
+            ...
+            etc
+            
+    (though these will generally be accessed via 4-byte unsigned longs rather than by individual bytes)
+    
+    Details of how each page is allocated (like which proc own it, whether it's writable, etc) is not
+    stored in this table, but instead is stored in the addrspace struct which is owned by each proc.
+*/
+
+/*
+    We have ANOTHER 'pageUse' table called 'kvPageUse' to indicate which page of VIRTUAL
+    memory is occupied in the MIPS_KSEG2 segment
+*/
+
+/*
+    Let's talk about kmalloc!
+    
+    Or, rather, allocating pages of memory for the kernel.  (alloc_kpages)
+    
+    We will designate 1 full page to host the addrspace_block's for kernel allocation.
+    The page is filled with individual addrspace_block entries.  Each entry is for individual
+    calls to alloc_kpages.
+    
+    Since more pages may be needed (if the number of alloc_kpages calls exceeds the amount
+    that can be recorded on a single page), the LAST addrspace_block on the page is reserved
+    to refer to the NEXT page
+*/
+
+//static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static vaddr_t      pageUseVAddr = 0;           // virtual address of the 'pageUse' table
+static paddr_t      pageUsePAddr = 0;           // physical address
+static size_t       pageUsePageCount = 0;       // number of pages used by the 'pageUse' table
+static size_t       availablePages = 0;         // number of available pages of physical memory;
+static paddr_t      physicalMemAddr = 0;        // address of start of [unstolen] physical memory
 
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+    KASSERT( sizeof(
+    KASSERT( availablePages == 0 );     // should only be called once!
+    
+    paddr_t ramlo, ramhi;
+ 
+    // figure out how much physical memory we have to work with, and use that
+    // to determine the size of the 'pageUse' table
+    ram_getsize(&ramlo, &ramhi);
+    
+    KASSERT( (ramlo & PAGE_FRAME) == ramlo );
+    KASSERT( (ramhi & PAGE_FRAME) == ramhi );
+    
+    pageUsePAddr = ramlo;
+    availablePages = (ramhi - ramlo) / PAGE_SIZE;
+    
+    KASSERT( availablePages > 0 );
+    
+    pageUsePageCount = (availablePages + (PAGE_SIZE * 8) - 1) / (PAGE_SIZE * 8);
+    
+    KASSERT( pageUsePageCount >= 1 );
+    KASSERT( pageUsePageCount < availablePages );
+    
+    availablePages -= pageUsePageCount;
+    
+    physicalMemAddr = pageUsePAddr + (pageUsePageCount * PAGE_SIZE);
+    
+    //  put this at the very end of addressible memory, since that is Kernel-accessible
+    //    and is TLB managed.
+    pageUseVAddr = (vaddr_t)0 - (pageUsePageCount * PAGE_SIZE);
+    KASSERT( pageUseVAddr >= MIPS_KSEG2 );
+    
+    // Now that we have our pages for our pageUse table, we need to zero it to indicate
+    //   that all pages are available!
+    bzero( (void*)(pageUseVAddr), pageUsePageCount * PAGE_SIZE );
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -61,11 +138,14 @@ free_kpages(vaddr_t addr)
 void
 vm_tlbshootdown_all(void)
 {
+    panic("TLB Shootdowns are not supported!");
 }
 
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
+    (void)ts;
+    panic("TLB Shootdowns are not supported!");
 }
 
 int
