@@ -61,7 +61,7 @@
 
 /*
     We have ANOTHER 'pageUse' table called 'kvPageUse' to indicate which page of VIRTUAL
-    memory is occupied in the MIPS_KSEG2 segment
+    memory is occupied in the MIPS_KSEG2 segment.
 */
 
 /*
@@ -76,14 +76,28 @@
     Since more pages may be needed (if the number of alloc_kpages calls exceeds the amount
     that can be recorded on a single page), the LAST addrspace_block on the page is reserved
     to refer to the NEXT page
+    
+    I call these the 'kMemBlock' pages
 */
 
 //static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+
+//  stuff for the pageUse table
 static vaddr_t      pageUseVAddr = 0;           // virtual address of the 'pageUse' table
 static paddr_t      pageUsePAddr = 0;           // physical address
 static size_t       pageUsePageCount = 0;       // number of pages used by the 'pageUse' table
-static size_t       availablePages = 0;         // number of available pages of physical memory;
+static size_t       availablePages = 0;         // number of available pages of physical memory at startup (doesn't change as things are allocated)
 static paddr_t      physicalMemAddr = 0;        // address of start of [unstolen] physical memory
+
+//  stuff for the kvPageUse table
+static vaddr_t      kvPageUseVAddr = 0;         // virtual address of the 'kvPageUse' table
+static paddr_t      kvPageUsePAddr = 0;         // physical address
+#define             kvPageUseCount   (size_t)((size_t)(0 - MIPS_KSEG2) / (PAGE_SIZE * 8))
+
+//  stuff for kMemBlock
+static vaddr_t      kMemBlockVAddr = 0;         // virtual address of the first kMemBlock page
+static paddr_t      kMemBlockPAddr = 0;         // physical address
+
 
 void
 vm_bootstrap(void)
