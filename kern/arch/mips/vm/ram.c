@@ -56,6 +56,9 @@ ram_bootstrap(void)
 	 * various annoying properties of the MIPS architecture would
 	 * force the RAM to be discontiguous. This is not a case we 
 	 * are going to worry about.
+     
+     WENBEN TODO -- with my virtual memory system, I can totally handle this.
+     come back and remove this BS once you finish.
 	 */
 	if (ramsize > 508*1024*1024) {
 		ramsize = 508*1024*1024;

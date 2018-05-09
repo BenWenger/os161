@@ -46,18 +46,21 @@ struct vnode;
  *
  * You write this.
  */
- 
-struct addrspace_block {
+  
+struct addrspace_segment {
     vaddr_t     vAddr;
-    paddr_t     pAddr;
     size_t      nPages;
     size_t      refCount;       // high bit (0x8000000L) indicates block is writable
 };
 
 struct addrspace {
-    struct addrspace_block**    blocks;
-    size_t                      blockCount;     // number used (<= number allocated)
-    size_t                      blockSize;      // number allocated
+    vaddr_t                     vPageTable;     // address of the 'master' page table
+    struct addrspace_segment**  segments;
+    size_t                      segCount;       // number used (<= number allocated)
+    size_t                      segSize;        // number allocated
+    
+    addrspace_segment           stackSeg;
+    addrspace_segment           heapSeg;
 };
 
 /*

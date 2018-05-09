@@ -39,103 +39,114 @@
 #include <vm.h>
 
 /*
-
-    To see if a page of memory is allocated, I have a 'pageUse' table.  This table is basically
-    a big array where each individual bit indicates if a page is available (0) or allocated (1).
+    So I'm using two different kinds of "pages tables".  One to keep track of which physical
+    pages have been allocated, and one to keep track of virtual->physical address translations.
     
-    Example:  If there are 1000 pages of physical memory, the pageUse table would need to be
-    ceil(1000/8) = 125 bytes wide:
-        pageUse[0] & 0x01  =   state of physical page 0
-        pageUse[0] & 0x02  =   state of physical page 1
-            ...
-        pageUse[0] & 0x80  =   state of physical page 7
-        pageUse[1] & 0x01  =   state of physical page 8
-            ...
-            etc
-            
-    (though these will generally be accessed via 4-byte unsigned longs rather than by individual bytes)
+    ----- PHYSICAL MEMORY ALLOCATION -----
     
-    Details of how each page is allocated (like which proc own it, whether it's writable, etc) is not
-    stored in this table, but instead is stored in the addrspace struct which is owned by each proc.
+    The physical allocation page table is minimalistic, with page of physical memory being
+    represented as a single bit.  0 if the page is available/unused, 1 if allocated.  This
+    page table is a fixed size depenging on how much physical memory is available, and needs to
+    be as large as is necessary to represent all of physical memory (minus the space needed for
+    itself, which realistically will only be a few pages).
+    
+    ----- V->P MAPPING -----
+    
+    The virtual->physical page table is a bit more complicated.  The idea behind this table is
+    that each virtual address will have a single entry that is 4 bytes (size of a pointer).
+    This pointer will be the physical page that is assigned to that virtual page, with the low
+    bits being used for special flags (see below).
+    
+    Since using a flat 4 bytes for all virtual pages would be excessive and a waste of space, the
+    v->p page table is tiered.  There are one or more 'secondary' page tables which are as
+    described above.  Secondary page tables are 1 page in size (4K).  Which means they can hold
+    the page table entries for 1K v->p page mappings.... which effectively means one secondary
+    page table is enough to address 4MB of virtual memory.
+    
+    There is then a 'master' page table which is structured the same, but each pointer represents
+    a 4MB block, and points to the physical table that has the secondary page table for that block.
+    
+    So those "special flags" I mentioned....   kmalloc will request X number of pages, and when freed,
+    it will expect all those pages to be deallocated, but it will not keep track of how many pages
+    you're supposed to free.  It expects us to keep track of that and manage it.  So I keep track
+    of this with flags!
+    
+    The VTBL_FIRST flag will be set if this page is the first page of an allocation.  When free is
+    called, this flag MUST be set for the page given (otherwise they gave you a bad address).  The
+    deallocator will then free THAT page, and every allocated page after it that does NOT have the
+    flag set.  So it'll loop freeing pages until it hits an unallocated page, or a 'KVTBL_FIRST'
+    page.
+    
+    
+    Lastly, there is one page table for the kernel, and one page table for each user process.  Woo
+    
 */
 
-/*
-    We have ANOTHER 'pageUse' table called 'kvPageUse' to indicate which page of VIRTUAL
-    memory is occupied in the MIPS_KSEG2 segment.
-*/
+#define             STACKPAGECOUNT      16  // number of pages allocated for user program stacks (cannot really grow)
+#define             HEAPPAGECOUNT       8   // number of pages allocated for the user heap (can grow as needed)
 
-/*
-    Let's talk about kmalloc!
-    
-    Or, rather, allocating pages of memory for the kernel.  (alloc_kpages)
-    
-    We will designate 1 full page to host the addrspace_block's for kernel allocation.
-    The page is filled with individual addrspace_block entries.  Each entry is for individual
-    calls to alloc_kpages.
-    
-    Since more pages may be needed (if the number of alloc_kpages calls exceeds the amount
-    that can be recorded on a single page), the LAST addrspace_block on the page is reserved
-    to refer to the NEXT page
-    
-    I call these the 'kMemBlock' pages
-*/
+#define             DIRECTMEM_SIZE      (MIPS_KSEG1 - MIPS_KSEG0)   // number of bytes that can be directly accessed via KSEG0
+#define             DIRECTMEM_PAGES     (DIRECTMEM_SIZE / PAGE_SIZE)
 
-//static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+// Physical memory tracking!
+static vaddr_t      physVaddr = 0;          // the vaddr of the physical memory allocation table
+static paddr_t      physMemStart = 0;       // the start of usable physical memory (minus what is needed for this table)
+static size_t       physPageCount = 0;      // total number of allocatable physical memory pages (minus this table)
+static size_t       userNextPhysPage = 0;   // the next physical page index to examine when looking for user allocations
+                                            //    this actually starts at the top and grows down
+static size_t       kernNextPhysPage = 0;   // the next physical page index to examine when looking for kernel allocations
+                                            //    this actually starts at the bottom and grows up
+                                            //      This helps keep kernel memory in low physical addresses so it can be
+                                            //      accessed via KSEG0 (fewer page faults)
 
-//  stuff for the pageUse table
-static vaddr_t      pageUseVAddr = 0;           // virtual address of the 'pageUse' table
-static paddr_t      pageUsePAddr = 0;           // physical address
-static size_t       pageUsePageCount = 0;       // number of pages used by the 'pageUse' table
-static size_t       availablePages = 0;         // number of available pages of physical memory at startup (doesn't change as things are allocated)
-static paddr_t      physicalMemAddr = 0;        // address of start of [unstolen] physical memory
+// Kernel virtual memory
 
-//  stuff for the kvPageUse table
-static vaddr_t      kvPageUseVAddr = 0;         // virtual address of the 'kvPageUse' table
-static paddr_t      kvPageUsePAddr = 0;         // physical address
-#define             kvPageUseCount   (size_t)((size_t)(0 - MIPS_KSEG2) / (PAGE_SIZE * 8))
-
-//  stuff for kMemBlock
-static vaddr_t      kMemBlockVAddr = 0;         // virtual address of the first kMemBlock page
-static paddr_t      kMemBlockPAddr = 0;         // physical address
-
+static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's master page table
 
 void
 vm_bootstrap(void)
 {
-    KASSERT( sizeof(
-    KASSERT( availablePages == 0 );     // should only be called once!
+    paddr_t lomem, himem;
+    size_t ptblsize;
     
-    paddr_t ramlo, ramhi;
- 
-    // figure out how much physical memory we have to work with, and use that
-    // to determine the size of the 'pageUse' table
-    ram_getsize(&ramlo, &ramhi);
+    //  This should only be called once at startup
+    KASSERT( vKernelMasterPT == 0 );
     
-    KASSERT( (ramlo & PAGE_FRAME) == ramlo );
-    KASSERT( (ramhi & PAGE_FRAME) == ramhi );
+    //  Get how much RAM we have to work with
+    ram_getsize( &lomem, &himem );
+    KASSERT( (lomem & PAGE_FRAME) == lomem );
+    KASSERT( (himem & PAGE_FRAME) == himem );
     
-    pageUsePAddr = ramlo;
-    availablePages = (ramhi - ramlo) / PAGE_SIZE;
+    physPageCount = (himem - lomem) / PAGE_SIZE;
+    KASSERT( physPageCount > 1 );
     
-    KASSERT( availablePages > 0 );
+    // how many pages does our phys page table need to be?
+    ptblsize = (physPageCount + 7) / 8;                 // number of bytes we need
+    ptblsize = (ptblsize + PAGE_SIZE - 1) / PAGE_SIZE;  // number of pages we need
+    ++ptblsize;             // add an extra page for the kernel master page table
     
-    pageUsePageCount = (availablePages + (PAGE_SIZE * 8) - 1) / (PAGE_SIZE * 8);
+    KASSERT( ptblsize > 1 );
+    KASSERT( ptblsize < physPageCount );
     
-    KASSERT( pageUsePageCount >= 1 );
-    KASSERT( pageUsePageCount < availablePages );
+    // All of the phys page table NEEDS to be in direct memory -- fuggit, I don't want to swap
+    //   and maintain page tables for this
+    physMemStart = lomem + (ptblsize * PAGE_SIZE);
+    KASSERT( physMemStart <= DIRECTMEM_SIZE );
     
-    availablePages -= pageUsePageCount;
+    physPageCount -= ptblsize;
+    physVaddr = PADDR_TO_KVADDR(lomem);
     
-    physicalMemAddr = pageUsePAddr + (pageUsePageCount * PAGE_SIZE);
+    ///////////////////////
+    //  Now that the phys allocation table is reserved, zero it out so all pages are available
+	bzero(physVaddr, ptblsize * PAGE_SIZE);
     
-    //  put this at the very end of addressible memory, since that is Kernel-accessible
-    //    and is TLB managed.
-    pageUseVAddr = (vaddr_t)0 - (pageUsePageCount * PAGE_SIZE);
-    KASSERT( pageUseVAddr >= MIPS_KSEG2 );
+    // I cheated a bit and took an extra page.  Make that page our kernel master page table
+    vKernelMasterPT = PADDR_TO_KVADDR(physMemStart - PAGE_SIZE);
     
-    // Now that we have our pages for our pageUse table, we need to zero it to indicate
-    //   that all pages are available!
-    bzero( (void*)(pageUseVAddr), pageUsePageCount * PAGE_SIZE );
+    /////////////////////
+    //  lastly, set up next page counters
+    kernNextPhysPage = 0;
+    userNextPhysPage = (physPageCount - 1);
 }
 
 /* Allocate/free some kernel-space virtual pages */
