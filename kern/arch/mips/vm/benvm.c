@@ -89,7 +89,7 @@
 #define             DIRECTMEM_PAGES     (DIRECTMEM_SIZE / PAGE_SIZE)
 
 // Physical memory tracking!
-static vaddr_t      physVaddr = 0;          // the vaddr of the physical memory allocation table
+static vaddr_t      physTblVaddr = 0;       // the vaddr of the physical memory allocation table
 static paddr_t      physMemStart = 0;       // the start of usable physical memory (minus what is needed for this table)
 static size_t       physPageCount = 0;      // total number of allocatable physical memory pages (minus this table)
 static size_t       userNextPhysPage = 0;   // the next physical page index to examine when looking for user allocations
@@ -102,6 +102,28 @@ static size_t       kernNextPhysPage = 0;   // the next physical page index to e
 // Kernel virtual memory
 
 static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's master page table
+
+
+#define             PHYS_TBL        ((unsigned long*)physTblVaddr)
+
+
+
+
+////////////////////////////////////
+
+static inline int isPhysMemAvailable(size_t page)
+{
+    return !( PHYS_TBL[page >> 3] & (1<<(page&7)) );
+}
+
+
+
+
+
+
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
 
 void
 vm_bootstrap(void)
@@ -134,11 +156,11 @@ vm_bootstrap(void)
     KASSERT( physMemStart <= DIRECTMEM_SIZE );
     
     physPageCount -= ptblsize;
-    physVaddr = PADDR_TO_KVADDR(lomem);
+    physTblVaddr = PADDR_TO_KVADDR(lomem);
     
     ///////////////////////
     //  Now that the phys allocation table is reserved, zero it out so all pages are available
-	bzero(physVaddr, ptblsize * PAGE_SIZE);
+	bzero(physTblVaddr, ptblsize * PAGE_SIZE);
     
     // I cheated a bit and took an extra page.  Make that page our kernel master page table
     vKernelMasterPT = PADDR_TO_KVADDR(physMemStart - PAGE_SIZE);
@@ -153,6 +175,10 @@ vm_bootstrap(void)
 vaddr_t 
 alloc_kpages(int npages)
 {
+    if(npages <= 0)
+        return 0;
+    
+    // 
 }
 
 void 
