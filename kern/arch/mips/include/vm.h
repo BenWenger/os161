@@ -55,6 +55,11 @@
 #define MIPS_KSEG1  0xa0000000
 #define MIPS_KSEG2  0xc0000000
 
+#define MIPS_KUSEG_PAGECOUNT    (0x80000000 / PAGE_SIZE)
+#define MIPS_KSEG0_PAGECOUNT    (0x20000000 / PAGE_SIZE)
+#define MIPS_KSEG1_PAGECOUNT    (0x20000000 / PAGE_SIZE)
+#define MIPS_KSEG2_PAGECOUNT    (0x40000000 / PAGE_SIZE)
+
 /* 
  * The first 512 megs of physical space can be addressed in both kseg0 and
  * kseg1. We use kseg0 for the kernel. This macro returns the kernel virtual

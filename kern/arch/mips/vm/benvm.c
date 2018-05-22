@@ -82,29 +82,31 @@
     
 */
 
+#define             NUMPAGES_PER_TABLE  (PAGE_SIZE / sizeof(paddr_t))
+
 #define             STACKPAGECOUNT      16  // number of pages allocated for user program stacks (cannot really grow)
 #define             HEAPPAGECOUNT       8   // number of pages allocated for the user heap (can grow as needed)
 
 #define             DIRECTMEM_SIZE      (MIPS_KSEG1 - MIPS_KSEG0)   // number of bytes that can be directly accessed via KSEG0
-#define             DIRECTMEM_PAGES     (DIRECTMEM_SIZE / PAGE_SIZE)
+
+static struct spinlock memSpinlock = SPINLOCK_INITIALIZER;
 
 // Physical memory tracking!
 static vaddr_t      physTblVaddr = 0;       // the vaddr of the physical memory allocation table
 static paddr_t      physMemStart = 0;       // the start of usable physical memory (minus what is needed for this table)
 static size_t       physPageCount = 0;      // total number of allocatable physical memory pages (minus this table)
 static size_t       userNextPhysPage = 0;   // the next physical page index to examine when looking for user allocations
-                                            //    this actually starts at the top and grows down
 static size_t       kernNextPhysPage = 0;   // the next physical page index to examine when looking for kernel allocations
-                                            //    this actually starts at the bottom and grows up
-                                            //      This helps keep kernel memory in low physical addresses so it can be
-                                            //      accessed via KSEG0 (fewer page faults)
+                                            
+static vaddr_t      kernNextVirtualBlock = 0;   // the next virtual address to allocate for kernel memory
 
 // Kernel virtual memory
 
 static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's master page table
 
 
-#define             PHYS_TBL        ((unsigned long*)physTblVaddr)
+#define             PHYS_TBL        ((size_t*)physTblVaddr)
+#define             NO_BLOCK_AVAIL  (~((size_t)0))
 
 
 
@@ -113,13 +115,195 @@ static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's m
 
 static inline int isPhysMemAvailable(size_t page)
 {
-    return !( PHYS_TBL[page >> 3] & (1<<(page&7)) );
+    if(page >= physPageCount)
+        return 0;
+    
+    return !( PHYS_TBL[page >> 5] & (1<<(page&31)) );
 }
 
+static inline void allocatePhysMemPage(size_t page)
+{
+    KASSERT( isPhysMemAvailable(page) );
+    
+    PHYS_TBL[page >> 5] |= 1<<(page&31);
+}
 
+static inline void freePhysMemPage(size_t page)
+{
+    KASSERT( page < physPageCount );
+    KASSERT( !isPhysMemAvailable(page) );
+    
+    PHYS_TBL[page >> 5] &= ~(1<<(page&31));
+}
 
+// returns 0 if the pages are not available
+//  returns 1 if they're available but non-contiguous
+//  returns 2 if available and contiguous
+static int checkPhysMemPagesAvailable(size_t* firstpage, int npages)
+{
+    int contiguous = 1;
+    size_t startpage = *firstpage;
+    size_t pg = startpage;
+    int found = 0;
+    int wrapped = 0;
+    while(1)
+    {
+        if( isPhysMemAvailable(pg) )
+        {
+            ++found;
+            if(found == 1)
+            {
+                *firstpage = pg;
+                contiguous = 1;
+            }
+            if(found >= npages)     break;
+        }
+        else
+            contiguous = 0;
+             
+        ++pg;
+        if(pg >= physPageCount)
+        {
+            wrapped = 1;
+            pg = 0;
+            contiguous = 0;
+        }
+        
+        if(wrapped && pg == startpage)
+            break;
+    }
+    
+    if(found >= npages)     // we found enough!
+        return contiguous + 1;
+    else
+        return 0;
+}
 
+static paddr_t* allocateNewSubPageTable()
+{
+    // we are only allocating one page, so just walk through the page table looking for
+    //   any slot.  Note this MUST be placed in direct mem
+    int ptblsize = (int)((physPageCount + 31) / 32);
+    int i;
+    for(i = 0; PHYS_TBL[i] == 0xFFFFFFFF; ++i)
+    {
+        if(i >= ptblsize)       return 0;       // no available pages
+    }
+    
+    int j = 0;
+    for(j = 0; PHYS_TBL[i] & (1<<j); ++j)   {}
+    
+    size_t page = (i * 32) + j;
+    paddr_t addr = (page * PAGE_SIZE) + physMemStart;
+    
+    if(addr >= DIRECTMEM_SIZE)  return 0;       // no available space in direct mem
+    
+    // take this page!
+    PHYS_TBL[i] |= (1<<j);
+    
+    paddr_t* ptr = (paddr_t*)(PADDR_TO_KVADDR(addr));
+    for(i = 0; i < (PAGE_SIZE/4); ++i)
+        ptr[i] = 0;
+    
+    return ptr;
+}
 
+///   TODO --- LETS DO THIS
+    *phys = bindPhysicalToVirtual( *phys, vad, npages, flags );
+
+static vaddr_t findContiguousVirtualBlock( vaddr_t masterTable, vaddr_t nextAddr, int npages, int user )
+{
+    vaddr_t addrOffset = (user ? MIPS_KUSEG : MIPS_KSEG2);
+    size_t pgStart = (user ? 1 : 0);
+    size_t pgCount = (user ? MIPS_KUSEG_PAGECOUNT : MIPS_KSEG2_PAGECOUNT);
+    
+    paddr_t** tbl = (paddr_t**)(masterTable);
+    size_t mn, sb;
+    
+    // Walk through virtual memory to find an open slot
+    
+    size_t page = (nextAddr / PAGE_SIZE);
+    size_t firstpage = page;
+    int run = 0;
+    int wrapped = 0;
+    
+    while(1)
+    {
+        mn = (page+run) / NUMPAGES_PER_TABLE;
+        sb = (page+run) % NUMPAGES_PER_TABLE;
+        
+        if(!tbl[mn])
+        {
+            tbl[mn] = (paddr_t*)allocateNewSubPageTable();
+            if(!tbl[mn])
+                return 0;
+        }
+        
+        if(tbl[mn][sb])     // occupied
+        {
+            page += run + 1;
+            run = 0;
+        }
+        else
+        {
+            ++run;
+            if(run >= npages)
+                break;          // found it!
+        }
+        
+        if(wrapped && (page+run) > firstpage)       // searched entire space, no available spot
+            return 0;
+        if(page+run >= pgCount)
+        {
+            wrapped = 1;
+            page = pgStart;
+            run = 0;
+        }
+    }
+    
+    // only exited the loop if we found a block.  That block is in 'page'
+    return (vaddr_t)( (page*PAGE_SIZE) + addrOffset );
+}
+
+// actually do the physical memory allocation!!!
+static vaddr_t doPhysicalPageAllocation( int npages, int user, vaddr_t masterPageTable, vaddr_t* nextVaddr, int flags )
+{
+    if(npages <= 0)
+        return 0;
+    
+    vmLock();
+    
+    // first, find a contiguous block of virtual memory at which to put this allocation
+    vaddr_t vad = findContiguousVirtualBlock( masterPageTable, *nextVaddr, npages, user );
+    if(!vad)
+    {
+        vmUnlock();
+        return 0;
+    }
+    
+    // next, see if we have 'npages' number of physical pages available
+    size_t* phys = (user ? &userNextPhysPage : &kernNextPhysPage);
+    int avail = checkPhysMemPagesAvailable( phys, npages );
+    if(!avail)
+    {
+        vmUnlock();
+        return 0;
+    }
+    
+    // this can be direct memory if this is not a user allocation, if all blocks are contiguous,
+    //    and if all blocks are in direct mem
+    int isdirect = !user && (avail == 2) &&
+                &&  ( (*phys + npages) * PAGE_SIZE) + physMemStart ) <= DIRECTMEM_SIZE;
+                
+    // if direct memory, we can use a direct vaddr
+    if(direct)
+        vad = PADDR_TO_KVADDR( (*phys * PAGE_SIZE) + physMemStart );
+    
+    *phys = bindPhysicalToVirtual( *phys, vad, npages, flags );
+    vmUnlock();
+    
+    return vad;
+}
 
 ////////////////////////////////////
 ////////////////////////////////////
@@ -168,17 +352,52 @@ vm_bootstrap(void)
     /////////////////////
     //  lastly, set up next page counters
     kernNextPhysPage = 0;
-    userNextPhysPage = (physPageCount - 1);
+    userNextPhysPage = (physPageCount / 8);    // kind of arbitrary
+    
+    kernNextVirtualBlock = MIPS_KSEG2;
 }
 
 /* Allocate/free some kernel-space virtual pages */
 vaddr_t 
 alloc_kpages(int npages)
 {
-    if(npages <= 0)
-        return 0;
     
-    // 
+    //  TODO REPLACE ALL THIS
+    spinlock_acquire( &physTblSpinlock );
+    
+    size_t nextstart = kernNextPhysPage;
+    int avail = arePhysMemPagesAvailable( &nextstart, npages, 0 );
+    
+    if(!avail)
+    {
+        spinlock_release( &physTblSpinlock );
+    }
+    
+//static int arePhysMemPagesAvailable(size_t* firstpage, int npages, int growdown)
+
+    
+    size_t pg = allocatePhysMemBlock(kernNextPhysPage, npages);
+    if(pg == NO_BLOCK_AVAIL)
+    {
+        spinlock_release( &physTblSpinlock );
+        return 0;
+    }
+    
+    kernNextPhysPage = pg + npages;
+    if(kernNextPhysPage >= physPageCount)
+        kernNextPhysPage = 0;
+    
+    spinlock_release( &physTblSpinlock );
+    
+    paddr_t paddr = (pg * PAGE_SIZE) + physMemStart;
+    vaddr_t vaddr = PADDR_TO_KVADDR( paddr );
+    
+    
+    
+    //  assume this is in direct mem, because everything is in direct mem
+    KASSERT( (pg + npages) <= DIRECTMEM_PAGES );
+    
+    return PADDR_TO_KVADDR((pg * PAGE_SIZE) + physMemStart);
 }
 
 void 
