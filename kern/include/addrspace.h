@@ -48,9 +48,11 @@ struct vnode;
  */
   
 struct addrspace_segment {
-    vaddr_t     vAddr;
-    size_t      nPages;
-    size_t      refCount;       // high bit (0x8000000L) indicates block is writable
+    vaddr_t             vAddr;
+    size_t              nPages;
+    size_t              refCount;
+    int                 writable;
+    struct spinlock     refSpin;
 };
 
 struct addrspace {
