@@ -49,20 +49,21 @@ struct vnode;
   
 struct addrspace_segment {
     vaddr_t             vAddr;
-    size_t              nPages;
+    int                 nPages;
     size_t              refCount;
-    int                 writable;
+    int                 flags;
     struct spinlock     refSpin;
 };
 
 struct addrspace {
     vaddr_t                     vPageTable;     // address of the 'master' page table
+    vaddr_t                     nextVAddr;      // next virtual address to be allocated
     struct addrspace_segment**  segments;
     size_t                      segCount;       // number used (<= number allocated)
     size_t                      segSize;        // number allocated
+    int                         isLoading;      //  true if in the middle of a load (always allow memory to be writable)
     
     addrspace_segment           stackSeg;
-    addrspace_segment           heapSeg;
 };
 
 /*
