@@ -38,6 +38,11 @@
 #define PAGE_SIZE  4096         /* size of VM page */
 #define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
 
+#define VTBL_FIRST 0x00000001   /* flag in page table to indicate this is the first */
+#define VTBL_READ  0x00000002
+#define VTBL_WRITE 0x00000004
+#define VTBL_EXEC  0x00000008
+
 /*
  * MIPS-I hardwired memory layout:
  *    0xc0000000 - 0xffffffff   kseg2 (kernel, tlb-mapped)
@@ -52,6 +57,11 @@
 #define MIPS_KSEG0  0x80000000
 #define MIPS_KSEG1  0xa0000000
 #define MIPS_KSEG2  0xc0000000
+
+#define MIPS_KUSEG_PAGECOUNT    (0x80000000 / PAGE_SIZE)
+#define MIPS_KSEG0_PAGECOUNT    (0x20000000 / PAGE_SIZE)
+#define MIPS_KSEG1_PAGECOUNT    (0x20000000 / PAGE_SIZE)
+#define MIPS_KSEG2_PAGECOUNT    (0x40000000 / PAGE_SIZE)
 
 /* 
  * The first 512 megs of physical space can be addressed in both kseg0 and
