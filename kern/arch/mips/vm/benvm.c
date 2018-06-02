@@ -86,7 +86,7 @@
 #define             MAX_ADDRESSABLE_PAGES   (0x10000)
 
 #define             STACKPAGECOUNT      16  // number of pages allocated for user program stacks (cannot really grow)
-#define             HEAPPAGECOUNT       8   // number of pages allocated for the user heap (can grow as needed)
+//#define             HEAPPAGECOUNT       8   // number of pages allocated for the user heap (can grow as needed)
 
 #define             DIRECTMEM_SIZE      (MIPS_KSEG1 - MIPS_KSEG0)   // number of bytes that can be directly accessed via KSEG0
 
@@ -842,6 +842,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 int
 as_prepare_load(struct addrspace *as)
 {
+    KASSERT(as != 0);
     clear_tlb();
     as->isLoading = 1;
 }
@@ -849,6 +850,7 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
+    KASSERT(as != 0);
     clear_tlb();
     as->isLoading = 0;
 }
@@ -856,4 +858,15 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
+    KASSERT(as);
+    KASSERT(as->stackSeg.nPages == 0);
+    
+    as->stackSeg.flags = VFLG_READ | VFLG_WRITE;
+    as->stackSeg.vAddr = doPhysicalPageAllocation( STACKPAGECOUNT, 1, as->vPageTable, &as->nextVAddr, as->stackSeg.flags, 0 );
+    if(!as->stackSeg.vAddr)
+        return ENOMEM;
+    as->stackSeg.nPages = STACKPAGECOUNT;
+    
+    *stackptr = as->stackSeg.vAddr + (as->stackSeg.nPages * PAGE_SIZE);
+    return 0;
 }
