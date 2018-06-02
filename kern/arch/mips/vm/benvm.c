@@ -247,7 +247,7 @@ static size_t bindPhysicalToVirtual( vaddr_t masterTableAddr, size_t physPage, v
         if(isPhysMemAvailable(physPage))
         {
             allocatePhysMemPage( physPage );
-            addEntryToPageTable( masterTableAddr, virtaddr, ((physPage*PAGE_SIZE) + physMemStart) | flags );
+            addEntryToPageTable( masterTableAddr, virtaddr, ((physPage*PAGE_SIZE) + physMemStart), flags );
             --npages;
             virtaddr += PAGE_SIZE;
             flags &= ~VTBL_FIRST;
@@ -349,7 +349,7 @@ static vaddr_t doPhysicalPageAllocation( int npages, int user, vaddr_t masterPag
     
     // this can be direct memory if this is not a user allocation, if all blocks are contiguous,
     //    and if all blocks are in direct mem
-    int isdirect = !user && (avail == 2) &&
+    int isdirect = !user && (avail == 2)
                 &&  ( ( (*phys + npages) * PAGE_SIZE) + physMemStart ) <= DIRECTMEM_SIZE;
                 
     // if direct memory, we can use a direct vaddr
