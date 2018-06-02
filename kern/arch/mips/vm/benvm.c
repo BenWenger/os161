@@ -110,6 +110,15 @@ static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's m
 #define             NO_BLOCK_AVAIL  (~((size_t)0))
 
 
+static inline int vmLock()
+{
+    spinlock_acquire(&memSpinlock);
+}
+
+static inline int vmUnlock()
+{
+    spinlock_release(&memSpinlock);
+}
 
 
 ////////////////////////////////////
@@ -341,10 +350,10 @@ static vaddr_t doPhysicalPageAllocation( int npages, int user, vaddr_t masterPag
     // this can be direct memory if this is not a user allocation, if all blocks are contiguous,
     //    and if all blocks are in direct mem
     int isdirect = !user && (avail == 2) &&
-                &&  ( (*phys + npages) * PAGE_SIZE) + physMemStart ) <= DIRECTMEM_SIZE;
+                &&  ( ( (*phys + npages) * PAGE_SIZE) + physMemStart ) <= DIRECTMEM_SIZE;
                 
     // if direct memory, we can use a direct vaddr
-    if(direct)
+    if(isdirect)
         vad = PADDR_TO_KVADDR( (*phys * PAGE_SIZE) + physMemStart );
     
     *phys = bindPhysicalToVirtual( masterPageTable, *phys, vad, npages, flags );
@@ -405,7 +414,7 @@ vm_bootstrap(void)
     
     ///////////////////////
     //  Now that the phys allocation table is reserved, zero it out so all pages are available
-	bzero(physTblVaddr, ptblsize * PAGE_SIZE);
+	bzero((void*)physTblVaddr, ptblsize * PAGE_SIZE);
     
     // I cheated a bit and took an extra page.  Make that page our kernel master page table
     vKernelMasterPT = PADDR_TO_KVADDR(physMemStart - PAGE_SIZE);
@@ -438,7 +447,7 @@ free_kpages(vaddr_t addr)
     int first = 0;
     
     vmLock();
-    while(page < MAX_ADDRESSABLE_PAGE)
+    while(page < MAX_ADDRESSABLE_PAGES)
     {
         mn = page / NUMPAGES_PER_TABLE;
         sb = page % NUMPAGES_PER_TABLE;
@@ -456,7 +465,7 @@ free_kpages(vaddr_t addr)
         
         // if we made it here, if this page is allocated we need to free it
         if(!tbl[mn])            break;  // not allocated
-        if(!tbl[mn][sub])       break;  // not allocated
+        if(!tbl[mn][sb])        break;  // not allocated
         
         // If we made it here, it IS allocated and we need to free it
         physpage = (tbl[mn][sb] - physMemStart) / PAGE_SIZE;
@@ -559,10 +568,9 @@ static void as_freeVirtBlock( vaddr_t pagetable, struct addrspace_segment* seg, 
     paddr_t** tbl = (paddr_t**)pagetable;
     
     size_t page = seg->vAddr / PAGE_SIZE;
-    size_t i;
     size_t mn, sb;
     vmLock();
-    for(i = 0; i < seg->nPages; ++i)
+    for(int i = 0; i < seg->nPages; ++i)
     {
         mn = (page+i) / NUMPAGES_PER_TABLE;
         sb = (page+i) % NUMPAGES_PER_TABLE;
@@ -658,9 +666,9 @@ static int shallowcopy_as_segment( vaddr_t dstpagetable, struct addrspace_segmen
     }
     else
     {
-        spinlock_acquire(src->refSpin);
+        spinlock_acquire(&src->refSpin);
         src->refCount++;
-        spinlock_release(src->refSpin);
+        spinlock_release(&src->refSpin);
         seg = src;
     }
     
@@ -703,9 +711,10 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+    KASSERT(as != 0);
     size_t i;
     as_destroySegment( as->vPageTable, &as->stackSeg, 0 );
-    for(i = 0; i < segCount; ++i)
+    for(i = 0; i < as->segCount; ++i)
     {
         as_destroySegment( as->vPageTable, as->segments[i], 1 );
     }
@@ -721,7 +730,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
     KASSERT(old != 0);
     KASSERT(ret != 0);
     
-    struct addrspace* as = kmalloc(sizeof(addrspace));
+    struct addrspace* as = kmalloc(sizeof(struct addrspace));
     if(!as)
         return ENOMEM;
     
@@ -741,12 +750,12 @@ as_copy(struct addrspace *old, struct addrspace **ret)
     if(!as->vPageTable)
         goto failure;
     
-    if(deepcopy_as_segment(&as->stackSeg, &old->stackSeg))
+    if(deepcopy_as_segment(as->vPageTable, &as->stackSeg, old->vPageTable, &old->stackSeg))
         goto failure;
     
     for(i = 0; i < old->segCount; ++i)
     {
-        if(shallowcopy_as_segment(&as->segments[i], old->segments[i]))
+        if(shallowcopy_as_segment(as->vPageTable, &as->segments[i], old->vPageTable, old->segments[i]))
             goto failure;
         as->segCount++;
     }
@@ -823,7 +832,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
     seg->nPages = (sz + PAGE_SIZE - 1) / PAGE_SIZE;
     seg->flags = 0;
     if(readable)    seg->flags |= VTBL_READ;
-    if(writable)    seg->flags |= VTBL_WRITE;
+    if(writeable)   seg->flags |= VTBL_WRITE;
     if(executable)  seg->flags |= VTBL_EXEC;
     
     vaddr_t tmp = vaddr;
@@ -845,6 +854,7 @@ as_prepare_load(struct addrspace *as)
     KASSERT(as != 0);
     clear_tlb();
     as->isLoading = 1;
+    return 0;
 }
 
 int
@@ -853,6 +863,7 @@ as_complete_load(struct addrspace *as)
     KASSERT(as != 0);
     clear_tlb();
     as->isLoading = 0;
+    return 0;
 }
 
 int
@@ -861,7 +872,7 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
     KASSERT(as);
     KASSERT(as->stackSeg.nPages == 0);
     
-    as->stackSeg.flags = VFLG_READ | VFLG_WRITE;
+    as->stackSeg.flags = VTBL_READ | VTBL_WRITE;
     as->stackSeg.vAddr = doPhysicalPageAllocation( STACKPAGECOUNT, 1, as->vPageTable, &as->nextVAddr, as->stackSeg.flags, 0 );
     if(!as->stackSeg.vAddr)
         return ENOMEM;
