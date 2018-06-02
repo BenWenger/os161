@@ -870,3 +870,4 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
     *stackptr = as->stackSeg.vAddr + (as->stackSeg.nPages * PAGE_SIZE);
     return 0;
 }
+

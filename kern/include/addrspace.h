@@ -63,7 +63,7 @@ struct addrspace {
     size_t                      segSize;        // number allocated
     int                         isLoading;      //  true if in the middle of a load (always allow memory to be writable)
     
-    addrspace_segment           stackSeg;
+    struct addrspace_segment    stackSeg;
 };
 
 /*
