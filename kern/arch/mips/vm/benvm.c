@@ -163,7 +163,7 @@ static void freePageTable(vaddr_t pagetable)
     KASSERT(pagetable != 0);
     vaddr_t* tbl = (vaddr_t*)(pagetable);
     
-    for(int i = 0; i < NUMPAGES_PER_TABLE; ++i)
+    for(size_t i = 0; i < NUMPAGES_PER_TABLE; ++i)
     {
         if(tbl[i])
             freeDirectMemPageByAddr( tbl[i] );
