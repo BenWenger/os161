@@ -146,6 +146,32 @@ static inline void freePhysMemPage(size_t page)
     PHYS_TBL[page >> 5] &= ~(1<<(page&31));
 }
 
+static void freeDirectMemPageByAddr(vaddr_t addr)
+{
+    KASSERT( addr >= MIPS_KSEG0 );
+    KASSERT( addr < MIPS_KSEG1 );
+    
+    addr -= MIPS_KSEG0;             // convert to physical offset
+    addr -= physMemStart;           // convert to offset to start of usable physical memory
+    size_t page = addr / PAGE_SIZE; // convert to page number
+    
+    freePhysMemPage(page);
+}
+
+static void freePageTable(vaddr_t pagetable)
+{
+    KASSERT(pagetable != 0);
+    vaddr_t* tbl = (vaddr_t*)(pagetable);
+    
+    for(int i = 0; i < NUMPAGES_PER_TABLE; ++i)
+    {
+        if(tbl[i])
+            freeDirectMemPageByAddr( tbl[i] );
+    }
+    
+    freeDirectMemPageByAddr( pagetable );
+}
+
 // returns 0 if the pages are not available
 //  returns 1 if they're available but non-contiguous
 //  returns 2 if available and contiguous
@@ -647,6 +673,22 @@ static int deepcopy_as_segment( vaddr_t dstpagetable, struct addrspace_segment* 
     return 0;
 }
 
+static void copyPageTableMapping( paddr_t** dst, paddr_t** src, vaddr_t addr, int pages )
+{
+    addr /= PAGE_SIZE;
+    size_t mn, sb;
+    
+    for(int i = 0; i < pages; ++i)
+    {
+        mn = (addr + i) / NUMPAGES_PER_TABLE;
+        sb = (addr + i) % NUMPAGES_PER_TABLE;
+        
+        if(!dst[mn])        dst[mn] = allocateNewSubPageTable();
+        
+        dst[mn][sb] = src[mn][sb];
+    }
+}
+
 static int shallowcopy_as_segment( vaddr_t dstpagetable, struct addrspace_segment** dst, vaddr_t srcpagetable, struct addrspace_segment* src )
 {
     struct addrspace_segment* seg;
@@ -670,6 +712,9 @@ static int shallowcopy_as_segment( vaddr_t dstpagetable, struct addrspace_segmen
         src->refCount++;
         spinlock_release(&src->refSpin);
         seg = src;
+        
+        // still need to populate dst's page table
+        copyPageTableMapping( (paddr_t**)(dstpagetable), (paddr_t**)(srcpagetable), src->vAddr, src->nPages );
     }
     
     *dst = seg;
@@ -718,6 +763,8 @@ as_destroy(struct addrspace *as)
     {
         as_destroySegment( as->vPageTable, as->segments[i], 1 );
     }
+    
+    freePageTable(as->vPageTable);
     
     kfree(as->segments);
     kfree(as);
