@@ -110,12 +110,12 @@ static vaddr_t      vKernelMasterPT = 0;    // Virtual address of the Kernel's m
 #define             NO_BLOCK_AVAIL  (~((size_t)0))
 
 
-static inline int vmLock()
+static inline void vmLock()
 {
     spinlock_acquire(&memSpinlock);
 }
 
-static inline int vmUnlock()
+static inline void vmUnlock()
 {
     spinlock_release(&memSpinlock);
 }
