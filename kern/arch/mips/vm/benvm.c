@@ -163,13 +163,14 @@ static void freePageTable(vaddr_t pagetable)
     KASSERT(pagetable != 0);
     vaddr_t* tbl = (vaddr_t*)(pagetable);
     
+    vmLock();
     for(int i = 0; i < NUMPAGES_PER_TABLE; ++i)
     {
         if(tbl[i])
             freeDirectMemPageByAddr( tbl[i] );
     }
-    
     freeDirectMemPageByAddr( pagetable );
+    vmUnlock();
 }
 
 // returns 0 if the pages are not available
@@ -678,6 +679,7 @@ static void copyPageTableMapping( paddr_t** dst, paddr_t** src, vaddr_t addr, in
     addr /= PAGE_SIZE;
     size_t mn, sb;
     
+    vmLock();
     for(int i = 0; i < pages; ++i)
     {
         mn = (addr + i) / NUMPAGES_PER_TABLE;
@@ -687,6 +689,7 @@ static void copyPageTableMapping( paddr_t** dst, paddr_t** src, vaddr_t addr, in
         
         dst[mn][sb] = src[mn][sb];
     }
+    vmUnlock();
 }
 
 static int shallowcopy_as_segment( vaddr_t dstpagetable, struct addrspace_segment** dst, vaddr_t srcpagetable, struct addrspace_segment* src )
